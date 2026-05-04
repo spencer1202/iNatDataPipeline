@@ -1,0 +1,1 @@
+Code was adapted from Clark Hollenberg at CNHP (https://github.com/clark-hollenberg/iNatScraper) and Kyle Kaskie at MTNHP

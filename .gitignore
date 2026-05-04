@@ -1,0 +1,6 @@
+.env
+
+### Python ###
+.pytest_cache
+.venv
+pipeline/__pycache__
