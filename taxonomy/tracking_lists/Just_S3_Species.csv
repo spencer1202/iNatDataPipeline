@@ -1,0 +1,87 @@
+SNAME,SCOMNAME,G_RANK,S_RANK,NAME_CATEGORY_DESC,ELCODE,EO_TRACK_STATUS_DESC,HPLIST
+Sebastes miniatus,Vermillion rockfish,GNR,S3,Vertebrate Animal,AFC4A06390,Track all extant and selected historical EOs,4
+Oncorhynchus tshawytscha pop. 27,"Chinook salmon (Oregon Coast ESU, spring run)",G5T3Q,S3,Vertebrate Animal,AFCHA0205J,Track all extant and selected historical EOs,4
+Cottus tenuis,Slender sculpin,G3,S3,Vertebrate Animal,AFC4E02240,Track all extant and selected historical EOs,3
+Falco peregrinus anatum,American Peregrine Falcon,G4T4,S3,Vertebrate Animal,ABNKD06071,Track all extant and selected historical EOs,4
+Strix nebulosa,Great Gray Owl,G5,S3,Vertebrate Animal,ABNSB12040,Track all extant and selected historical EOs,3
+Gymnorhinus cyanocephalus,Pinyon Jay,G3,S3,Vertebrate Animal,ABPAV07010,Track all extant and selected historical EOs,2
+Sitta carolinensis aculeata,Slender-billed Nuthatch,G5TU,S3,Vertebrate Animal,ABPAZ01021,Track all extant and selected historical EOs,3
+Oncorhynchus mykiss pop. 19,Klamath Basin redband trout,G5T3T4Q,S3,Vertebrate Animal,AFCHA0209T,Track all extant and selected historical EOs,4
+Canachites canadensis,Spruce Grouse,G5,S3,Vertebrate Animal,ABNLC09010,Track all extant and selected historical EOs,3
+Asio flammeus,Short-eared Owl,G5,S3,Vertebrate Animal,ABNSB13040,Track all extant and selected historical EOs,3
+Eumetopias jubatus,Northern sea lion,G3,S3,Vertebrate Animal,AMAJC03010,Track all extant and selected historical EOs,2
+Oregonichthys crameri,Oregon chub,G3,S3,Vertebrate Animal,AFCJB56010,Track all extant and selected historical EOs,1
+Oncorhynchus tshawytscha pop. 19,"Chinook salmon (Middle Columbia River ESU, spring run)",G5T3Q,S3,Vertebrate Animal,AFCHA0205U,Track all extant and selected historical EOs,4
+Catostomus tahoensis,Tahoe sucker,G4,S3,Vertebrate Animal,AFCJC02210,Track all extant and selected historical EOs,2
+Lasiurus cinereus,Hoary bat,G3G4,S3,Vertebrate Animal,AMACC05032,Track all extant and selected historical EOs,3
+Catostomus snyderi,Klamath largescale sucker,G3,S3,Vertebrate Animal,AFCJC02200,Track all extant and selected historical EOs,3
+Sorex preblei,Preble's shrew,G4,S3,Vertebrate Animal,AMABA01030,Track all extant and selected historical EOs,3
+Criocoris saliens,Salien plant bug,G4,S3,Invertebrate Animal,IIHEM84010,Track all extant and selected historical EOs,3
+Monadenia chaceana,Chace sideband,G2G3Q,S3,Invertebrate Animal,IMGASC7150,Track all extant and selected historical EOs,3
+Hebrus buenoi,Bueno's velvet water bug,G4,S3,Invertebrate Animal,IIHEM88010,Track all extant and selected historical EOs,3
+Margaritifera falcata,Western pearlshell,G3G4,S3,Invertebrate Animal,IMBIV27020,Track all extant and selected historical EOs,2
+Platylygus pseudotsugae,Douglas-fir plant bug,G5,S3,Invertebrate Animal,IIHEM98010,Track all extant and selected historical EOs,3
+Rhyacophila leechi,A caddisfly,G3,S3,Invertebrate Animal,IITRI19390,Track all extant and selected historical EOs,2
+Fluminicola turbiniformis,Turban pebblesnail,G3,S3,Invertebrate Animal,IMGASG3120,Track all extant and selected historical EOs,3
+Rhyacophila chandleri,A caddisfly,G3,S3,Invertebrate Animal,IITRI19380,Track all extant and selected historical EOs,2
+Pristiloma johnsoni,Broadwhorl tightcoil,G3,S3,Invertebrate Animal,IMGAS80050,Track all extant and selected historical EOs,3
+Moselyana comosa,A caddisfly,G3,S3,Invertebrate Animal,IITRIC8010,Track all extant and selected historical EOs,3
+Oligophlebodes mostbento,Tombstone Prairie caddisfly,G3,S3,Invertebrate Animal,IITRI17010,Track all extant and selected historical EOs,3
+Rhyacophila unipunctata,One-spot rhyacophilan caddisfly,G3,S3,Invertebrate Animal,IITRI19090,Track all extant and selected historical EOs,3
+Chloealtis aspasma,Siskiyou short-horned grasshopper,G3,S3,Invertebrate Animal,IIORT12010,Track all extant and selected historical EOs,1
+Namamyia plutonis,A caddisfly,G3,S3,Invertebrate Animal,IITRIC9010,Track all extant and selected historical EOs,3
+Sulcaria badia,Lichen,G3,S3,Fungus,NLTEST0030,Track all extant and selected historical EOs,1
+Buxbaumia aphylla,Brown shield-moss,G5,S3,Nonvascular Plant,NBMUS1B010,Track all extant and selected historical EOs,3
+Plagiothecium piliferum,Hair silk moss,G5,S3,Nonvascular Plant,NBMUS5J050,Track all extant and selected historical EOs,3
+Eucladium verticillatum,Lime-seep eucladium,G4,S3,Nonvascular Plant,NBMUS2T010,Track all extant and selected historical EOs,3
+Tayloria serrata,Serrate trumpet moss,G4,S3,Nonvascular Plant,NBMUS79050,Track all extant and selected historical EOs,3
+Usnea rubicunda,Red beard lichen,G4G5,S3,Fungus,NLLEC4R0N0,Track all extant and selected historical EOs,3
+Tetraplodon mnioides,Entire-leaved nitrogen moss,G5,S3,Nonvascular Plant,NBMUS7C020,Track all extant and selected historical EOs,3
+Hackelia cronquistii,Cronquist's stickseed,G3,S3,Vascular Plant,PDBOR0G080,Track all extant and selected historical EOs,1
+Frasera umpquaensis,Umpqua swertia,G3,S3,Vascular Plant,PDGEN050F0,Track all extant and selected historical EOs,1
+Corydalis aquae-gelidae,Cold-water corydalis,G3,S3,Vascular Plant,PDFUM03046,Track all extant and selected historical EOs,1
+Pyrrocoma radiata,Snake River goldenweed,G3,S3,Vascular Plant,PDASTDT0G0,Track all extant and selected historical EOs,1
+Astragalus hoodianus,Hood River milk-vetch,G4,S3,Vascular Plant,PDFAB0F410,Track all extant and selected historical EOs,2
+Opuntia fragilis,Brittle prickly-pear,G5,S3,Vascular Plant,PDCAC0D0H0,Track all extant and selected historical EOs,2
+Astragalus tegetarioides,Bastard kentrophyta,G3,S3,Vascular Plant,PDFAB0F8P0,Track all extant and selected historical EOs,1
+Erythronium howellii,Howell's adder's-tongue,G3,S3,Vascular Plant,PMLIL0U080,Track all extant and selected historical EOs,1
+Astragalus peckii,Peck's milk-vetch,G3,S3,Vascular Plant,PDFAB0F6Q0,Track all extant and selected historical EOs,1
+Sedum spathulifolium ssp. purdyi,Purdy's stonecrop,G5T4Q,S3,Vascular Plant,PDCRA0A1D2,Track all extant and selected historical EOs,3
+Monardella purpurea,Siskiyou monardella,G3Q,S3,Vascular Plant,PDLAM180T0,Track all extant and selected historical EOs,2
+Melica stricta,Nodding melicgrass,G4,S3,Vascular Plant,PMPOA3X0H0,Track all extant and selected historical EOs,2
+Penstemon glaucinus,Blue-leaved penstemon,G3,S3,Vascular Plant,PDSCR1L2M0,Track all extant and selected historical EOs,1
+Penstemon peckii,Peck's penstemon,G3,S3,Vascular Plant,PDSCR1L4V0,Track all extant and selected historical EOs,1
+Botrychium pinnatum,Pinnate grape-fern,G5,S3,Vascular Plant,PPOPH010V0,Track all extant and selected historical EOs,4
+Ranunculus austro-oreganus,Southern Oregon buttercup,G3,S3,Vascular Plant,PDRAN0L0E0,Track all extant and selected historical EOs,1
+Botrychium lanceolatum,Lance-leaved grape-fern,G5,S3,Vascular Plant,PPOPH01070,Track all extant and selected historical EOs,4
+Castilleja chlorotica,Green-tinged paintbrush,G3,S3,Vascular Plant,PDSCR0D0C0,Track all extant and selected historical EOs,1
+Rorippa columbiae,Columbia cress,G3,S3,Vascular Plant,PDBRA27060,Track all extant and selected historical EOs,1
+Luina serpentina,Colonial luina,G3,S3,Vascular Plant,PDAST61020,Track all extant and selected historical EOs,1
+Collomia mazama,Mt. Mazama collomia,G3,S3,Vascular Plant,PDPLM02070,Track all extant and selected historical EOs,1
+Botrychium minganense,Gray moonwort,G5,S3,Vascular Plant,PPOPH010R0,Track all extant and selected historical EOs,4
+Romanzoffia thompsonii,Thompson mistmaiden,G3,S3,Vascular Plant,PDHYD0E050,Track all extant and selected historical EOs,1
+Hydnotrya inordinata,Fungus,G3,S3,Fungus,NFFUN2W010,Track all extant and selected historical EOs,3
+Ramaria amyloidea,Fungus,G3,S3,Fungus,NFFUN4V010,Track all extant and selected historical EOs,3
+Ramaria largentii,Fungus,G3,S3,Fungus,NFFUN5H010,Track all extant and selected historical EOs,3
+Ramaria maculatipes,Fungus,G3,S3,Fungus,NFFUN5K010,Track all extant and selected historical EOs,3
+Cortinarius magnivelatus,Fungus,G3,S3,Fungus,NFSM000410,Track all extant and selected historical EOs,3
+Pseudocyphellaria mallota,Lichen,G4,S3,Fungus,NLLEC3B070,Track all extant and selected historical EOs,2
+Rhizopogon flavofibrillosus,Fungus,G3,S3,Fungus,NFSM000172,Track all extant and selected historical EOs,3
+Rhizopogon rogersii,Fungus,G3,S3,Fungus,NFNHP00074,Track all extant and selected historical EOs,3
+Rhizopogon semireticulatus,Fungus,G2G3,S3,Fungus,NFNHP00075,Track all extant and selected historical EOs,3
+Actaea laciniata,Mt. Hood bugbane,G3,S3,Vascular Plant,PDRAN07040,Track all extant and selected historical EOs,1
+Mirabilis laevis var. retrorsa,Bigelow's four-o'clock,G4G5T4,S3,Vascular Plant,PDNYC0A043,Track all extant and selected historical EOs,2
+Pomoleuctra andersoni,Oregon needlefly,G2,S3,Invertebrate Animal,IIPLE0D010,Track all extant and selected historical EOs,4
+Limnanthes alba ssp. gracilis,Slender meadow-foam,G4T3,S3,Vascular Plant,PDLIM02053,Track all extant and selected historical EOs,1
+Acipenser medirostris pop. 2,Green sturgeon (Northern DPS),G2T1,S3,Vertebrate Animal,AFCAA01032,Track all extant and selected historical EOs,2
+Chloroscypha flavida,Fungus,G3,S3,Fungus,NFFUN2J010,Track all extant and selected historical EOs,3
+Pseudocyphellaria hawaiiensis,Gilded specklebelly lichen,G5,S3,Fungus,NLT0032430,Track all extant and selected historical EOs,3
+Ramellogammarus similimanus,Stumptown scud,G3,S3,Invertebrate Animal,ICMAL81020,Track all extant and selected historical EOs,1
+Rubroboletus pulcherrimus,Red-pored bolete,G3,S3,Fungus,NFSM000016,Track all extant and selected historical EOs,3
+Rhizopogon evadens var. subalpinus,Fungus,GUT3,S3,Fungus,NFBOL0B0C1,Track all extant and selected historical EOs,3
+Russula chlorineolens,Fungus,G3,S3,Fungus,NFSM000098,Track all extant and selected historical EOs,3
+Doellingeria gormanii,Gorman's aster,G3,S3,Vascular Plant,PDASTEC060,Track all extant and selected historical EOs,1
+Eriocoma pinetorum,Pine needlegrass,G4,S3,Vascular Plant,PMPOA5X0R0,Track all extant and selected historical EOs,3
+Leuconotopicus albolarvatus,White-headed Woodpecker,G4,S3,Vertebrate Animal,ABNYF07070,Track all extant and selected historical EOs,4
+Dissingia crassitunicata,Fungus,G3,S3,Fungus,NFFUN2U010,Track all extant and selected historical EOs,2
+Doellingeria vialis,Wayside aster,G3,S3,Vascular Plant,PDASTEC0A0,Track all extant and selected historical EOs,1
