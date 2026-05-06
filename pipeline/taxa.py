@@ -93,8 +93,6 @@ class TaxonCacheBuilder:
         Returns:
             Tuple of (taxon_id, matched_name) if found, (None, None) otherwise
         """
-        # Preprocess the name for better iNaturalist matching
-        processed_name = self.preprocess_name(scientific_name)
 
         url = "https://api.inaturalist.org/v1/taxa"
         if not self.access_token:
@@ -102,7 +100,7 @@ class TaxonCacheBuilder:
         headers = helpers.get_auth_headers(self.access_token, self.config["authentication"]["user_agent"])
 
         params = {
-            "q"         : processed_name,
+            "q"         : scientific_name,
             "per_page"  : 5,
             "order"     : "desc",
             "order_by"  : "observations_count"
@@ -267,7 +265,11 @@ class TaxonCacheBuilder:
             to_match["sname_clean"] = None
             
         # Preprocess tracking list
-        to_match["sname_clean"] = np.where(to_match["sname_clean"].isna(), to_match["sname"].apply(self.preprocess_name), to_match["sname_clean"])
+        to_match["sname_clean"] = np.where(
+            to_match["sname_clean"].isna(), 
+            to_match["sname"].apply(self.preprocess_name), 
+            to_match["sname_clean"]
+        )
 
         # Process undescribed species
         to_match = TaxonCacheBuilder.process_undescribed(to_match)
