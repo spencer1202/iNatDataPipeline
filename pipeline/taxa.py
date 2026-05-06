@@ -311,8 +311,7 @@ class TaxonCacheBuilder:
         self.export(mappings_df, out_mapping_file)
         
 
-
-def main():
+def logging_setup():
     logger.setLevel(logging.INFO)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
@@ -324,6 +323,10 @@ def main():
 
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
+
+
+def main():
+    logging_setup()
 
     logger.info("*** Running TaxonCacheBuilder ***")
     logger.info("---------------------------------")
