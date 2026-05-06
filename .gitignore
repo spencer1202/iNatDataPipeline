@@ -1,6 +1,9 @@
 .env
 
 ### Python ###
-.pytest_cache
 .venv
 pipeline/__pycache__
+tests/__pycache__
+
+### Pytest ###
+.pytest_cache

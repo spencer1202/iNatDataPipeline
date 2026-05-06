@@ -23,6 +23,7 @@ import datetime
 import pandas as pd
 import configparser
 import os
+import re
 import time
 import numpy as np
 from typing import Dict, Optional, Tuple
@@ -38,15 +39,8 @@ class TaxonCacheBuilder:
         self.config = helpers.load_config(config_file)
         self.access_token = None
     
-
-    def update_latest_cache(self, out_mapping_file):
-        # Update most recent cache in config file
-        self.config.set("taxon_map", "map_file", out_mapping_file)
-        with open(self.config_file, 'w') as fp:
-            self.config.write(fp)
-    
-
-    def preprocess_name(self, name: str) -> str:
+    @staticmethod
+    def preprocess_name(name: str) -> str:
         """
         Preprocess taxon name for iNaturalist API query by converting trinomial format
         
@@ -57,23 +51,50 @@ class TaxonCacheBuilder:
             name: Scientific name to preprocess
             
         Returns:
-            Name with "var." and "ssp." removed for better iNaturalist matching
+            Name with "var.", "pop.", and "ssp." removed for better iNaturalist matching
         """
         if not name or pd.isna(name):
             return None
         
-        processed_name = str(name).strip()
-
-        processed_name = processed_name.replace(" var. ", " ")
-        processed_name = processed_name.replace(" ssp. ", " ")
+        # Regular expression that extracts just the genus name, species name, and subspecies name or 
+        # subspecies/population number.
+        expr = r"^((?:[a-zA-Z\-]+[ \t]){1,2})(?:(?:var\.|pop\.|ssp\.)\s)?(.+)?"
+        match = re.search(expr, name.strip())
+        if not match:       # some weird edge case
+            return None
+        
+        processed_name = match.group(1) + match.group(2)
 
         # Clean up any double spaces
         while "  " in processed_name:
             processed_name = processed_name.replace("  ", " ")
         
         return processed_name.strip()
-    
 
+    @staticmethod
+    def is_undescribed(name: str) -> str | None:
+        """
+        Determines if a scientific name is undescribed (contains a number).
+        
+        Args:
+            name: The scientific name to check
+        
+        Returns:
+            The generic species name if the scientific name is undescribed, None otherwise
+        """
+        expr = r"(.+)\s\d+$"
+        match = re.search(expr, name)
+
+        if not match:
+            return None
+        return match.group(1)
+        
+    def update_latest_cache(self, out_mapping_file):
+        """Update filename of most recent cache entry in the config file"""
+        self.config.set("taxon_map", "map_file", out_mapping_file)
+        with open(self.config_file, 'w') as fp:
+            self.config.write(fp)
+    
     def setup_access(self):
         """Set up access token to be used when querying taxon names"""
         self.access_token = helpers.get_access_token()
@@ -165,14 +186,16 @@ class TaxonCacheBuilder:
         out_mapping_file = os.path.join(name_map_folder, "mappings_" + datetime.datetime.now().strftime("%Y%m%d") + ".csv")
         
         cols = [
-            "SNAME",
-            "ELCODE",
+            "sname",
+            "elcode",
             "taxon_id", 
-            "iNat_name"
+            "inat_name",
+            # TODO "last_updated",
+            "exact_match"
         ]
 
         # Load tracking list
-        tracking_df = pd.read_csv(tracking_list_file, encoding="latin1", usecols=cols[:2])
+        tracking_df = pd.read_csv(tracking_list_file, encoding="latin1")
         print(f"Loaded tracking list with {len(tracking_df)} entries")
 
         # Load existing map file

@@ -1,0 +1,11 @@
+[project]
+name = "iNaturalist_ORBIC_data_pipeline"
+version = "0.0.1"
+authors = [
+    { name = "Spencer Henwood", email = "henwood@pdx.edu" }
+]
+readme = "README.md"
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+pythonpath = [".", "pipeline"]
