@@ -1,5 +1,8 @@
 .env
 
+### VSCode ###
+.vscode
+
 ### Python ###
 .venv
 pipeline/__pycache__
