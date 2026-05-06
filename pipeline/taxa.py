@@ -31,7 +31,8 @@ from typing import Dict, Optional, Tuple
 
 import helpers
 
-logfile = "logs/taxon_cache_builder.log"
+log_folder = "logs"
+log_file = "taxon_cache_builder.log"
 logger = logging.getLogger(__name__)
         
 
@@ -316,12 +317,15 @@ class TaxonCacheBuilder:
         
 
 def logging_setup():
+# Make sure name maps folder exists
+    os.makedirs(log_folder, exist_ok=True)
+
     logger.setLevel(logging.INFO)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 
-    file_handler = logging.FileHandler(logfile)
+    file_handler = logging.FileHandler(os.path.join(log_folder, log_file))
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M"))
 
