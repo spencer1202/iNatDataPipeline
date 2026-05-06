@@ -8,7 +8,23 @@ from pyinaturalist.constants import KEYRING_KEY
 import pyinaturalist
 
 
-def get_access_token() -> str:
+def get_yn_input(msg: str) -> bool:
+    """
+    Asks the user a yes/no question, validates input, returns result
+    """
+    success = False
+    while not success:
+        print(msg)
+        to_continue = input(msg)
+        if to_continue.lower() == "yes" or to_continue.lower() == "y":
+            return True
+        elif to_continue.lower() == "no" or to_continue.lower() == "n":
+            return False
+        else:
+            print("Invalid input.")
+
+
+def get_access_token(user: str) -> str:
     """
     Get iNaturalist authorization access token.
     Fetches credentials from system keyring. If not present, prompts user for credentials and saves them to system keyring.
@@ -22,18 +38,14 @@ def get_access_token() -> str:
 
     # Check if user wants to use current credentials
     if username and password:
-        print(f"Found iNaturalist credentials for {username}. Is this correct?")
-        success = False
-        while not success:
-            use_creds = input("(Y/N): ")
-            if use_creds.lower() == "yes" or use_creds.lower() == "y":
-                return pyinaturalist.get_access_token()
-            elif use_creds.lower() == "no" and use_creds.lower() == "n":
-                success = True
-            else:
-                print("Input not recognized.")
-
-    print("No saved credentials found. Enter your iNaturalist credentials below.")
+        if username == user:
+            return pyinaturalist.get_access_token()
+        if get_yn_input(f"Found iNaturalist credentials for {username}, not {user}. Would you like to proceed with these credentials instead? (Y/N): "):
+            return pyinaturalist.get_access_token()
+    else:
+        print("No saved credentials found.")
+        
+    print("Enter your iNaturalist credentials below.")
     username = input('Username: ')
     password = getpass.getpass()
 

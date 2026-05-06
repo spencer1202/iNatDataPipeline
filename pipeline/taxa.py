@@ -97,7 +97,7 @@ class TaxonCacheBuilder:
     
     def setup_access(self):
         """Set up access token to be used when querying taxon names"""
-        self.access_token = helpers.get_access_token()
+        self.access_token = helpers.get_access_token(self.config["authentication"]["username"])
         
 
     def get_taxon_info(self, scientific_name: str) -> Tuple[Optional[int], Optional[str]]:
@@ -166,6 +166,36 @@ class TaxonCacheBuilder:
         return (None, None)
     
     
+    @staticmethod
+    def insert_overrides(df: pd.DataFrame, overrides: pd.DataFrame) -> pd.DataFrame:
+        match_mask = df["elcode"].isin(overrides["elcode"])
+        df["sname_clean"] = df["elcode"].map(overrides.set_index("elcode")["inat_name"])
+
+
+    @staticmethod
+    def extract_undescribed(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extracts all undescribed scientific names, meaning they have a number instead of a species/subspecies or a population number.
+
+        Args:
+            df: The dataframe to extract undescribed scientific names from
+        
+        Returns:
+            A tuple of two dataframes: the original dataframe modified to remove all records with undescribed
+            scientific names, and a dataframe with only the undescribed taxa.
+        """
+        # Matches names with a number at the end, grabs all text before the number
+        expr = r"^((?:[A-Za-z\-]+[\t ])+[A-Za-z\-]+)[\t ]\d+$"
+        df["generic_name"] = df["sname_clean"].str.extract(expr)
+        # undescribed_mask = df["generic_name"].notna()
+        # undescribed_df = df[undescribed_mask].copy()
+        # df = df[~undescribed_mask]
+        # df = df.drop(columns=["generic_name"])
+    
+        return df
+
+
+    
     def build_cache(self) -> Dict[str, int]:
         """
         Build taxon_id cache from tracking list and save name mappings to CSV
@@ -188,30 +218,49 @@ class TaxonCacheBuilder:
         cols = [
             "sname",
             "elcode",
-            "taxon_id", 
+            "taxon_id",
             "inat_name",
-            # TODO "last_updated",
-            "exact_match"
+            "last_updated",
         ]
+
+        today = datetime.date.today()
 
         # Load tracking list
         tracking_df = pd.read_csv(tracking_list_file, encoding="latin1")
+        tracking_df = tracking_df.rename(columns={"SNAME": "sname", "ELCODE": "elcode", "SCOMNAME": "scomname"})
+        tracking_df = tracking_df[["sname", "scomname", "elcode"]]
         print(f"Loaded tracking list with {len(tracking_df)} entries")
 
         # Load existing map file
         if os.path.exists(map_file) and not force_rebuild:
-            mappings_df = pd.read_csv(map_file, usecols=cols)
-            print(f"Loaded existing mappings with {len(mappings_df)} entries")
+            try:
+                mappings_df = pd.read_csv(map_file)
+                print(f"Loaded existing mappings with {len(mappings_df)} entries")
+            except:
+                if helpers.get_yn_input("Failed to load existing mappings. Rebuild from scratch? (Y/N): "):
+                    print(f"Rebuilding whole taxon mapping.")
+                    mappings_df = pd.DataFrame(columns=cols)
+                else:
+                    return None
         else:
             print(f"Rebuilding whole taxon mapping.")
             mappings_df = pd.DataFrame(columns=cols)
-        
-        # Load taxon overrides
-        overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
 
         # Filter for names that still need to be processed
-        to_match = tracking_df[~tracking_df["ELCODE"].isin(mappings_df["ELCODE"])]
+        to_match = tracking_df[~tracking_df["elcode"].isin(mappings_df["elcode"])].copy()
         print(f"Found {len(to_match)} tracking list entries not present in existing mappings.")
+
+        # Insert name overrides
+        overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
+        if len(overrides_df):
+            print(f"Overriding {len(overrides_df)} names from overrides file...")
+            self.insert_overrides(to_match, overrides_df)
+            
+        # Preprocess tracking list
+        to_match["sname_clean"] = np.where(to_match["sname_clean"].isna(), to_match["sname"].apply(self.preprocess_name), to_match["sname_clean"])
+
+        # Pull out undescribed species
+        to_match = TaxonCacheBuilder.process_undescribed(to_match)
     
         # Process unmatched rows
         process_total = len(to_match)
@@ -219,16 +268,8 @@ class TaxonCacheBuilder:
         new_rows = []
 
         for _, row in to_match.iterrows():
-            sname = row["SNAME"]
+            sname = row["sname"]
             print(f"[Processing {process_num} / {process_total}]\t{sname}")
-
-            # Check for taxon in overrides list
-            override_row = overrides_df[overrides_df["ELCODE"] == row["ELCODE"]].head(1)
-            if len(override_row):
-                new_row = override_row.iloc[0].to_dict()
-                new_rows.append(new_row)
-                process_num += 1
-                continue
 
             taxon_id, matched_name = self.get_taxon_info(sname)
 
@@ -245,7 +286,8 @@ class TaxonCacheBuilder:
             new_row = row.to_dict()
             # Add / overwrite mapping fields
             new_row["taxon_id"] = clean_taxon_id
-            new_row["iNat_name"] = matched_name
+            new_row["inat_name"] = matched_name
+            new_row["last_updated"] = today
 
             new_rows.append(new_row)
             process_num += 1
@@ -255,7 +297,7 @@ class TaxonCacheBuilder:
         if new_rows:
             mappings_df = pd.concat([mappings_df, pd.DataFrame(new_rows)], ignore_index=True)
         
-        mappings_df = mappings_df.drop_duplicates(subset="SNAME", keep="last")
+        mappings_df = mappings_df.drop_duplicates(subset="sname", keep="last")
         mappings_df.to_csv(out_mapping_file, index=False)
 
         self.update_latest_cache(out_mapping_file)
