@@ -258,9 +258,12 @@ class TaxonCacheBuilder:
 
         # Insert name overrides
         overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
-        if len(overrides_df):
-            logger.info(f"Replaces {len(overrides_df)} names with names from overrides file...")
+        overrides_count = len(overrides_df[overrides_df["elcode"].isin(tracking_df["elcode"])])
+        if overrides_count:
+            logger.info(f"Replacing {len(overrides_count)} names with names from overrides file...")
             self.insert_overrides(to_match, overrides_df)
+        else:
+            to_match["sname_clean"] = None
             
         # Preprocess tracking list
         to_match["sname_clean"] = np.where(to_match["sname_clean"].isna(), to_match["sname"].apply(self.preprocess_name), to_match["sname_clean"])
@@ -274,10 +277,11 @@ class TaxonCacheBuilder:
         new_rows = []
         undescribed_names: dict[tuple[int, str]] = {}
 
+        logger.info("Beginning taxon queries...")
         for _, row in to_match.iterrows():
             sname = row["sname_clean"]
             generic_name = row["generic_name"]
-            logger.info(f"[Processing {process_num} / {process_total}]\t{sname}")
+            logger.info(f"{process_num:>4} / {process_total}\t{sname}")
 
             # Check if this is an undescribed taxon, and if so if it has already been mapped.
             if pd.isna(generic_name):
@@ -333,7 +337,7 @@ def main():
 
     builder = TaxonCacheBuilder()
     builder.setup_access()
-    builder.build_cache(force_rebuild=False)
+    builder.build_cache(force_rebuild=True)
 
     logger.info("Done!")
     logger.info("----------------------------------\n")
