@@ -22,6 +22,7 @@ import requests
 import datetime
 import pandas as pd
 import configparser
+import logging
 import os
 import re
 import time
@@ -30,6 +31,9 @@ from typing import Dict, Optional, Tuple
 
 import helpers
 
+logfile = "logs/taxon_cache_builder.log"
+logger = logging.getLogger(__name__)
+        
 
 class TaxonCacheBuilder:
 
@@ -38,6 +42,7 @@ class TaxonCacheBuilder:
         self.config_file = config_file
         self.config = helpers.load_config(config_file)
         self.access_token = None
+
     
     @staticmethod
     def preprocess_name(name: str) -> str:
@@ -70,30 +75,7 @@ class TaxonCacheBuilder:
             processed_name = processed_name.replace("  ", " ")
         
         return processed_name.strip()
-
-    @staticmethod
-    def is_undescribed(name: str) -> str | None:
-        """
-        Determines if a scientific name is undescribed (contains a number).
         
-        Args:
-            name: The scientific name to check
-        
-        Returns:
-            The generic species name if the scientific name is undescribed, None otherwise
-        """
-        expr = r"(.+)\s\d+$"
-        match = re.search(expr, name)
-
-        if not match:
-            return None
-        return match.group(1)
-        
-    def update_latest_cache(self, out_mapping_file):
-        """Update filename of most recent cache entry in the config file"""
-        self.config.set("taxon_map", "map_file", out_mapping_file)
-        with open(self.config_file, 'w') as fp:
-            self.config.write(fp)
     
     def setup_access(self):
         """Set up access token to be used when querying taxon names"""
@@ -136,7 +118,7 @@ class TaxonCacheBuilder:
                 return (None, None)
         
         except requests.RequestException as e:
-            print(f"Error looking up '{scientific_name}': {e}")
+            logger.error(f"Error looking up '{scientific_name}': {e}")
             return None, None
 
         # Look for exact name match first
@@ -173,30 +155,48 @@ class TaxonCacheBuilder:
 
 
     @staticmethod
-    def extract_undescribed(df: pd.DataFrame) -> pd.DataFrame:
+    def process_undescribed(df: pd.DataFrame) -> pd.DataFrame:
         """
-        Extracts all undescribed scientific names, meaning they have a number instead of a species/subspecies or a population number.
+        Identifies all undescribed scientific names, meaning they have a number instead of a species/subspecies or 
+        a population number, and populates a new column with their more generic name.
 
         Args:
-            df: The dataframe to extract undescribed scientific names from
+            df: The dataframe to identify undescribed taxa
         
         Returns:
-            A tuple of two dataframes: the original dataframe modified to remove all records with undescribed
-            scientific names, and a dataframe with only the undescribed taxa.
+            The dataframe with a new "generic_name" column added that is populated with a higher taxonomic 
+            classification if the taxa is undescribed.
         """
         # Matches names with a number at the end, grabs all text before the number
         expr = r"^((?:[A-Za-z\-]+[\t ])+[A-Za-z\-]+)[\t ]\d+$"
         df["generic_name"] = df["sname_clean"].str.extract(expr)
-        # undescribed_mask = df["generic_name"].notna()
-        # undescribed_df = df[undescribed_mask].copy()
-        # df = df[~undescribed_mask]
-        # df = df.drop(columns=["generic_name"])
-    
+        
         return df
 
+    @staticmethod
+    def clean_taxon_id(id: str) -> int | None:
+        # Clean up taxon ID
+        if id and not pd.isna(id) and str(id).lower() != "nan":
+            try:
+                clean_taxon_id = int(float(id))
+                return clean_taxon_id
+            except (ValueError, TypeError):
+                return None
+        else:
+            return None
+    
+
+    def export(self, df, out_file):
+        """
+        Export dataframe to file and update the latest cache filepath in the config file
+        """
+        df.to_csv(out_file, index=False)
+        self.config.set("taxon_map", "map_file", out_file)
+        with open(self.config_file, 'w') as fp:
+            self.config.write(fp)
 
     
-    def build_cache(self) -> Dict[str, int]:
+    def build_cache(self, force_rebuild: bool = False) -> Dict[str, int]:
         """
         Build taxon_id cache from tracking list and save name mappings to CSV
 
@@ -207,7 +207,6 @@ class TaxonCacheBuilder:
         tracking_list_file: str = self.config["taxon_map"]["tracking_list"]
         overrides_file: str     = self.config["taxon_map"]["name_overrides_file"]
         map_file: str           = self.config["taxon_map"]["map_file"]
-        force_rebuild: bool     = self.config["taxon_map"]["force_rebuild"]
 
         # Make sure name maps folder exists
         name_map_folder: str = "taxonomy/name_maps"
@@ -221,6 +220,7 @@ class TaxonCacheBuilder:
             "taxon_id",
             "inat_name",
             "last_updated",
+            "sname_clean"
         ]
 
         today = datetime.date.today()
@@ -229,58 +229,67 @@ class TaxonCacheBuilder:
         tracking_df = pd.read_csv(tracking_list_file, encoding="latin1")
         tracking_df = tracking_df.rename(columns={"SNAME": "sname", "ELCODE": "elcode", "SCOMNAME": "scomname"})
         tracking_df = tracking_df[["sname", "scomname", "elcode"]]
-        print(f"Loaded tracking list with {len(tracking_df)} entries")
+        logger.info(f"Loaded tracking list with {len(tracking_df)} entries")
 
         # Load existing map file
         if os.path.exists(map_file) and not force_rebuild:
             try:
                 mappings_df = pd.read_csv(map_file)
-                print(f"Loaded existing mappings with {len(mappings_df)} entries")
+                logger.info(f"Loaded existing mappings with {len(mappings_df)} entries")
             except:
                 if helpers.get_yn_input("Failed to load existing mappings. Rebuild from scratch? (Y/N): "):
-                    print(f"Rebuilding whole taxon mapping.")
+                    logger.info(f"Rebuilding whole taxon mapping.")
                     mappings_df = pd.DataFrame(columns=cols)
                 else:
+                    logger.info(f"Exiting program.")
                     return None
         else:
-            print(f"Rebuilding whole taxon mapping.")
+            logger.info(f"Rebuilding whole taxon mapping.")
             mappings_df = pd.DataFrame(columns=cols)
 
         # Filter for names that still need to be processed
-        to_match = tracking_df[~tracking_df["elcode"].isin(mappings_df["elcode"])].copy()
-        print(f"Found {len(to_match)} tracking list entries not present in existing mappings.")
+        to_match: pd.DataFrame = tracking_df[~tracking_df["elcode"].isin(mappings_df["elcode"])].copy()
+        if len(to_match) == 0:
+            logger.info("All taxa on species list are already in current taxon map.")
+            self.export(mappings_df, out_mapping_file)
+            return
+        
+        logger.info(f"Found {len(to_match)} tracking list entries not present in existing mappings.")
 
         # Insert name overrides
         overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
         if len(overrides_df):
-            print(f"Overriding {len(overrides_df)} names from overrides file...")
+            logger.info(f"Replaces {len(overrides_df)} names with names from overrides file...")
             self.insert_overrides(to_match, overrides_df)
             
         # Preprocess tracking list
         to_match["sname_clean"] = np.where(to_match["sname_clean"].isna(), to_match["sname"].apply(self.preprocess_name), to_match["sname_clean"])
 
-        # Pull out undescribed species
+        # Process undescribed species
         to_match = TaxonCacheBuilder.process_undescribed(to_match)
     
         # Process unmatched rows
         process_total = len(to_match)
         process_num = 1
         new_rows = []
+        undescribed_names: dict[tuple[int, str]] = {}
 
         for _, row in to_match.iterrows():
-            sname = row["sname"]
-            print(f"[Processing {process_num} / {process_total}]\t{sname}")
+            sname = row["sname_clean"]
+            generic_name = row["generic_name"]
+            logger.info(f"[Processing {process_num} / {process_total}]\t{sname}")
 
-            taxon_id, matched_name = self.get_taxon_info(sname)
-
-            # Clean up taxon ID
-            if taxon_id and not pd.isna(taxon_id) and str(taxon_id).lower() != "nan":
-                try:
-                    clean_taxon_id = int(float(taxon_id))
-                except (ValueError, TypeError):
-                    clean_taxon_id = None
+            # Check if this is an undescribed taxon, and if so if it has already been mapped.
+            if pd.isna(generic_name):
+                taxon_id, matched_name = self.get_taxon_info(sname)
             else:
-                clean_taxon_id = None
+                if not undescribed_names.get(generic_name):
+                    taxon_id, matched_name = self.get_taxon_info(generic_name)
+                    undescribed_names[generic_name] = (taxon_id, matched_name)
+                else:
+                    taxon_id, matched_name = undescribed_names.get(generic_name)
+
+            clean_taxon_id = TaxonCacheBuilder.clean_taxon_id(taxon_id)
             
             # Copy all existing fields from tracking_df
             new_row = row.to_dict()
@@ -296,20 +305,36 @@ class TaxonCacheBuilder:
 
         if new_rows:
             mappings_df = pd.concat([mappings_df, pd.DataFrame(new_rows)], ignore_index=True)
+            mappings_df = mappings_df.drop(columns=["sname_clean"])
+            mappings_df = mappings_df.drop_duplicates(subset="sname", keep="last")
         
-        mappings_df = mappings_df.drop_duplicates(subset="sname", keep="last")
-        mappings_df.to_csv(out_mapping_file, index=False)
-
-        self.update_latest_cache(out_mapping_file)
-
-
-
+        self.export(mappings_df, out_mapping_file)
+        
 
 
 def main():
+    logger.setLevel(logging.INFO)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+
+    file_handler = logging.FileHandler(logfile)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M"))
+
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+    logger.info("*** Running TaxonCacheBuilder ***")
+    logger.info("---------------------------------")
+
     builder = TaxonCacheBuilder()
     builder.setup_access()
-    builder.build_cache()
+    builder.build_cache(force_rebuild=False)
+
+    logger.info("Done!")
+    logger.info("----------------------------------\n")
+
 
 
 if __name__ == "__main__":
