@@ -29,8 +29,10 @@
 	"identifications_count": true,
 	"license_code": true,
 	"location": true,
+	"place_guess": true,
 	"num_identification_agreements": true,
 	"num_identification_disagreements": true,
+	"captive": true,
 	"obscured": true,
 	"observed_on": true,
 	"observed_on_string": true,
@@ -40,6 +42,7 @@
 		"type": true
 	},
 	"private_location": true,
+	"private_place_guess": "string",
 	"project_ids": true,
 	"public_positional_accuracy": true,
 	"quality_grade": true,
