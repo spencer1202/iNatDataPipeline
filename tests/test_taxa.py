@@ -1,15 +1,20 @@
 import pytest
 import configparser
 import time
+import os
 import pandas as pd
 
-from pipeline.taxa import TaxonCacheBuilder
+import pipeline.taxa as taxa
 
 config = "config.ini"
 
+tracking_file = "taxonomy/tracking_lists/all_tracked_species.csv"
+mapping_file = "tests/test_mappings.csv"
+overrides_file = "taxonomy/name_maps/name_overrides.csv"
+
 
 def test_config():
-    builder = TaxonCacheBuilder(config)
+    builder = taxa.TaxonCacheBuilder(config)
 
     print(builder.config.sections())
 
@@ -28,8 +33,6 @@ def test_config():
 
 
 def test_preprocess():
-    builder = TaxonCacheBuilder(config)
-
     names = {
         "Plagiochila semidecurrens var. semidecurrens"  : "Plagiochila semidecurrens semidecurrens",
         "Stegonia latifolia var. pilifera"              : "Stegonia latifolia pilifera",
@@ -49,7 +52,7 @@ def test_preprocess():
     }
     
     for name, expected in names.items():
-        processed_name = builder.preprocess_name(name)
+        processed_name = taxa.preprocess_name(name)
         assert processed_name == expected
 
 
@@ -57,6 +60,83 @@ def test_preprocess_long():
     tracking_df = pd.read_csv("taxonomy/tracking_lists/all_tracked_species.csv", usecols=["SNAME"])
 
     for name in tracking_df["SNAME"].to_list():
-        result = TaxonCacheBuilder.preprocess_name(name)
-        print(f"Before: {name:<50}After: {result}")
-        assert TaxonCacheBuilder.preprocess_name(name)
+        result = taxa.preprocess_name(name)
+        #print(f"Before: {name:<50}After: {result}")
+        assert taxa.preprocess_name(name)
+
+
+def test_load_tracking_list_success():
+    tracking_file = "taxonomy/tracking_lists/all_tracked_species.csv"
+
+    tracking_df: pd.DataFrame = taxa.load_tracking_list(tracking_file)
+    assert [col in tracking_df.columns for col in ["sname", "scomname", "elcode"]]
+    #print(tracking_df.info())
+
+
+def test_load_tracking_list_failure():
+    # Non existent file
+    with pytest.raises(FileNotFoundError):
+        tracking_df = taxa.load_tracking_list("not_a_file.csv")
+    
+    # File without correct columns
+    with pytest.raises(KeyError):
+        tracking_df = taxa.load_tracking_list("tests/bad.csv")
+
+
+def test_load_mappings_success():
+    cols = [
+        "sname",
+        "elcode",
+        "taxon_id",
+        "inat_name",
+        "last_updated",
+        "sname_clean"
+    ]
+      
+    map_file = "tests/test_mappings.csv"
+    assert os.path.exists(map_file)
+    mappings_df = taxa.load_mapping_list(map_file)
+    assert len(mappings_df) == 86
+    assert [col in mappings_df.columns for col in cols]
+    
+    mappings_df = taxa.load_mapping_list("not_a_file")
+    assert len(mappings_df) == 0
+    assert [col in mappings_df.columns for col in cols]
+
+    mappings_df = taxa.load_mapping_list()
+    assert len(mappings_df) == 0
+    assert [col in mappings_df.columns for col in cols]
+
+
+def test_get_to_match_list():
+    tracking_df = taxa.load_tracking_list(tracking_file)
+    mapping_df = taxa.load_mapping_list(mapping_file)
+    to_match = taxa.get_to_match_list(tracking_df, mapping_df)
+    
+    assert len(to_match) <= len(tracking_df)
+    assert len(to_match[to_match["elcode"].isin(mapping_df["elcode"])]) == 0
+
+
+def test_setup_dfs():
+    tracking_df, mapping_df, overrides_df = taxa.setup_dfs(
+        tracking_file, mapping_file, overrides_file
+    )
+
+def test_name_overrides():
+    tracking_df, mapping_df, overrides_df = taxa.setup_dfs(
+        tracking_file, mapping_file, overrides_file
+    )
+    to_match = taxa.get_to_match_list(tracking_df, mapping_df)
+    to_match["sname_clean"] = taxa.get_name_overrides(to_match, overrides_df)
+    print(to_match[to_match["sname_clean"].notna()])
+
+"""
+def setup_dfs() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    
+    Returns the three main dataframes (in order): tracking_df, mapping_df, to_match
+    
+    tracking_df = taxa.load_tracking_list("taxonomy/tracking_lists/all_tracked_species.csv")
+    mapping_df = taxa.load_mapping_list("tests/test_mappings.csv")
+    to_match = taxa.get_to_match_list(tracking_df, mapping_df)
+    return tracking_df, mapping_df, to_match
+"""

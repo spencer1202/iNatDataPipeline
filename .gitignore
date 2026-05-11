@@ -1,4 +1,8 @@
 .env
+logs
+
+### VSCode ###
+.vscode
 
 ### Python ###
 .venv

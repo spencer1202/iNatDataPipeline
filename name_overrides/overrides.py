@@ -14,15 +14,15 @@ def fill_elcodes(df: pd.DataFrame, elcodes_df: pd.DataFrame) -> pd.DataFrame:
     Fill in the missing ELCODES from the iNaturalist Collector Species Lists with values from
     Biotics query.
     """
-    elcodes_sname_index_df = elcodes_df[["ELCODE", "SNAME", "SCOMNAME"]].set_index("SNAME")
-    return df.set_index("SNAME").combine_first(elcodes_sname_index_df).reset_index()
+    elcodes_sname_index_df = elcodes_df[["elcode", "sname", "scomname"]].set_index("sname")
+    return df.set_index("sname").combine_first(elcodes_sname_index_df).reset_index()
 
 
 def biotics_query(df: pd.DataFrame) -> str:
     table = "BCD_ET"
     query = f"SELECT * FROM {table} WHERE SNAME IN (\n"
-    for _, row in df[df["ELCODE"].isna()].iterrows():
-        line = '\'' + row["SNAME"] + "\',\n"
+    for _, row in df[df["elcode"].isna()].iterrows():
+        line = '\'' + row["sname"] + "\',\n"
         query += line
     query = query.rstrip(',\n')
     query += "\n)"
@@ -55,13 +55,22 @@ def main():
     nonvasc_df  = pd.read_csv(config["overrides"]["nonvascular_fungi_csv"])
     tracking_df = pd.read_csv(config["taxon_map"]["tracking_list"])
 
+    # Clean column names
+    column_renames = {
+        "ELCODE": "elcode", 
+        "SNAME": "sname", 
+        "SCOMNAME": "scomname"
+    }
+    tracking_df = tracking_df.rename(columns=column_renames)
+
     dfs = [invert_df, vert_df, vasc_df, nonvasc_df]
-    cols_to_keep = ["ELCODE", "SNAME", "SCOMNAME", "iNat_name"]
+    cols_to_keep = ["elcode", "sname", "scomname", "inat_name"]
     overrides_df = pd.DataFrame(columns=cols_to_keep)
 
     for df in dfs:
-        df = df.rename(columns={"iNaturalist name if different": "iNat_name"})
-        df = df[df["iNat_name"].notna()]
+        df = df.rename(columns=column_renames)
+        df = df.rename(columns={"iNaturalist name if different": "inat_name"})
+        df = df[df["inat_name"].notna()]
         if "TRACK" in df.columns:
             df = df[df["TRACK"] == "Y"]
         
@@ -75,23 +84,24 @@ def main():
     print(f"Found {len(overrides_df)} records with different iNaturalist names.")
 
     # Write Biotics query for missing ELCODEs
-    missing_elcode = len(df[df["ELCODE"].isna()])
+    missing_elcode = len(df[df["elcode"].isna()])
     if args.query:
         if not missing_elcode:
             print(f"No records with missing ELCODE!")
         else:
-            print(f"Found {len(df[df["ELCODE"].isna()])} entries without an ELCODE. Generating query...")
+            print(f"Found {len(df[df["elcode"].isna()])} entries without an ELCODE. Generating query...")
             print(biotics_query(overrides_df))
         return
 
     # Fill in missing ELCODEs
     if args.fill:
         elcodes_df = pd.read_csv(config["overrides"]["elcodes_csv"])
+        elcodes_df = elcodes_df.rename(columns=column_renames)
         print(f"Found {missing_elcode} entries without an ELCODE. Filling in ELCODEs from Biotics query result ({len(elcodes_df)} results).")
         overrides_df = fill_elcodes(overrides_df, elcodes_df)
     
-    elcode_match_mask = ~overrides_df["ELCODE"].isna() & overrides_df["ELCODE"].isin(tracking_df["ELCODE"])
-    sname_match_mask = overrides_df["SNAME"].isin(tracking_df["SNAME"])
+    elcode_match_mask = ~overrides_df["elcode"].isna() & overrides_df["elcode"].isin(tracking_df["elcode"])
+    sname_match_mask = overrides_df["sname"].isin(tracking_df["sname"])
     overrides_df = overrides_df[elcode_match_mask | sname_match_mask]
     print(f"Found {len(overrides_df)} matching records in the tracking list. Writing name overrides to file...")
 
