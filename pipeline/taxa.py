@@ -29,6 +29,7 @@ import logging
 import os
 import re
 import time
+import sqlite3
 import numpy as np
 from typing import Dict, Optional, Tuple
 
@@ -37,6 +38,9 @@ import helpers
 log_folder = "logs"
 log_file = "taxon_cache_builder.log"
 logger = logging.getLogger(__name__)
+
+TAXA_TABLE = "taxa"
+
 
 # Helper Functions
 #########################################################################################
@@ -286,7 +290,7 @@ class TaxonCacheBuilder:
             Tuple of (taxon_id, matched_name) if found, (None, None) otherwise
         """
 
-        url = "https://api.inaturalist.org/v1/taxa"
+        url = "https://api.inaturalist.org/v2/taxa"
         if not self.access_token:
             self.setup_access()
         headers = helpers.get_auth_headers(self.access_token, self.config["authentication"]["user_agent"])
