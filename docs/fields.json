@@ -1,0 +1,60 @@
+{
+	"id": true,
+	"community_taxon_id": true,
+	"context_geoprivacy": true,
+	"created_at": true,
+	"description": true,
+	"geojson": {
+	  "coordinates": true,
+	  "type": true
+	},
+	"geoprivacy": true,
+	"identifications": 
+	  {
+		"id": true,
+		"body": true,
+		"category": true,
+		"created_at": true,
+		"current": true,
+		"own_observation": true,
+		"taxon": {
+			"id": true
+		},
+		"user": {
+			"id": true,
+			"login": true,
+			"name": true
+		}
+	  },
+	"identifications_count": true,
+	"license_code": true,
+	"location": true,
+	"place_guess": true,
+	"num_identification_agreements": true,
+	"num_identification_disagreements": true,
+	"captive": true,
+	"obscured": true,
+	"observed_on": true,
+	"observed_on_string": true,
+	"positional_accuracy": true,
+	"private_geojson": {
+		"coordinates": true,
+		"type": true
+	},
+	"private_location": true,
+	"private_place_guess": "string",
+	"project_ids": true,
+	"public_positional_accuracy": true,
+	"quality_grade": true,
+	"reviewed_by": true,
+	"taxon": {
+		"id": true
+	},
+	"uri": true,
+	"user": {
+		"id": true,
+		"login": true,
+		"name": true,
+		"viewer_trusted_by_observer": true
+	}
+}
