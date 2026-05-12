@@ -1,6 +1,7 @@
-SNAME,SCOMNAME,G_RANK,S_RANK,NAME_CATEGORY_DESC,ELCODE,EO_TRACK_STATUS_DESC,HPLIST
-Sebastes miniatus,Vermillion rockfish,GNR,S3,Vertebrate Animal,AFC4A06390,Track all extant and selected historical EOs,4
-Oncorhynchus tshawytscha pop. 27,"Chinook salmon (Oregon Coast ESU, spring run)",G5T3Q,S3,Vertebrate Animal,AFCHA0205J,Track all extant and selected historical EOs,4
-Cottus tenuis,Slender sculpin,G3,S3,Vertebrate Animal,AFC4E02240,Track all extant and selected historical EOs,3
-Falco peregrinus anatum,American Peregrine Falcon,G4T4,S3,Vertebrate Animal,ABNKD06071,Track all extant and selected historical EOs,4
-Strix nebulosa,Great Gray Owl,G5,S3,Vertebrate Animal,ABNSB12040,Track all extant and selected historical EOs,3
+"ELCODE","G_RANK","ELEMENT_SUBNATIONAL_ID","SNAME","SCOMNAME","S_RANK","EO_TRACK_STATUS_DESC"
+"ABNNN08010","G4","6520.0","Ptychoramphus aleuticus","Cassin's Auklet","S2B","Track all extant and selected historical EOs"
+"AFCFA10010","GNR","443816.0","Sardinops sagax","Pacific sardine","S1","Track all extant and selected historical EOs"
+"ABNKD06074","G4T3Q","12968.0","Falco peregrinus tundrius","Arctic Peregrine Falcon","S3?N","Track all extant and selected historical EOs"
+"ABNFC01021","G4T3T4","6329.0","Pelecanus occidentalis californicus","California Brown Pelican","S2N","Track all extant and selected historical EOs"
+"AFCHA02054","G5T4Q","6815.0","Oncorhynchus tshawytscha pop. 25","Chinook salmon (Southern Oregon/Northern California Coast ESU, spring run)","S4","Track all extant and selected historical EOs"
+"AFCHA02092","G5T4","6840.0","Oncorhynchus mykiss gairdneri","Inland Columbia Basin redband trout","S2S3","Track all extant and selected historical EOs"
