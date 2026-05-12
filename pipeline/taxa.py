@@ -231,7 +231,7 @@ class TaxonMappingBuilder:
             # Be kind to the API
             time.sleep(1)
 
-        return new_rows
+        return pd.DataFrame(new_rows)
 
     
     def build_mapping(self, tracking_file: str, overrides_file: str, auth: iNaturalistAuth, force_rebuild: bool = False):
@@ -240,11 +240,19 @@ class TaxonMappingBuilder:
 
 
         # Import overrides list
-        overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
+        try:
+            overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
+        except FileNotFoundError as err:
+            logger.error(f"Could not find overrides file: {overrides_file}.")
+            return
         logger.info(f"Loaded {len(overrides_df)} name overrides from {overrides_file}.")
 
         # Import and clean tracking list
-        tracking_df: pd.DataFrame = pd.read_csv(tracking_file)
+        try:
+            tracking_df: pd.DataFrame = pd.read_csv(tracking_file)
+        except FileNotFoundError as err:
+            logger.error(f"Could not find tracking file: {tracking_file}.")
+            return
         logger.info(f"Loaded {len(tracking_df)} taxa from tracking list {tracking_file}.")
         tracking_df = TaxonMappingBuilder.rename_tracking_cols(tracking_df)
 
@@ -254,6 +262,10 @@ class TaxonMappingBuilder:
         logger.info(f"Updated {overrides_count} names.")
         logger.info("Preprocessing scientific names...")
         tracking_df = TaxonMappingBuilder.preprocess(tracking_df)
+
+        # Make sure database is set up
+        with self.db_manager as db:
+            db.setup_db()
 
         # Create mapping dataframe, either with prior entries or from scratch
         if not force_rebuild:
@@ -267,14 +279,17 @@ class TaxonMappingBuilder:
 
         match_mask = tracking_df["est_id"].isin(mapping_df["est_id"])
         to_match = tracking_df[~match_mask]
-        logger.info(f"Found {len(to_match)} tracking list entries not present in existing mappings.")
-        to_match = TaxonMappingBuilder.get_undescribed_names(to_match)
-        logger.info(f"Undescribed taxa: {len(to_match[~to_match["exact_match"]])}")
-        
-        new_mappings = TaxonMappingBuilder.get_new_mappings(to_match, auth)
+        if len(to_match) == 0:
+            logger.info("All taxa on tracking list are already present in mappings.")
+        else:
+            logger.info(f"Found {len(to_match)} tracking list entries not present in existing mappings.")
+            to_match = TaxonMappingBuilder.get_undescribed_names(to_match)
+            logger.info(f"Undescribed taxa: {len(to_match[~to_match["exact_match"]])}")
+            
+            new_mappings = TaxonMappingBuilder.get_new_mappings(to_match, auth)
 
-        print(pd.DataFrame(new_mappings))
+            with self.db_manager as db:
+                db.insert_mappings(new_mappings)
 
-        # TODO insert new mappings into database
-
-
+        logger.info("Done!")
+        logger.info("----------------------------------\n")

@@ -87,13 +87,16 @@ def main():
 
     db_manager = DBManager(config["DEFAULT"]["db_file"])
     taxon_mapper = taxa.TaxonMappingBuilder(db_manager)
-    taxon_mapper.build_mapping(
-        config["taxon_map"]["tracking_list"],
-        config["taxon_map"]["name_overrides_file"],
-        auth,
-        args.rebuild
-    )
     
+    try:
+        taxon_mapper.build_mapping(
+            config["taxon_map"]["tracking_list"],
+            config["taxon_map"]["name_overrides_file"],
+            auth,
+            args.rebuild
+        )
+    except FileNotFoundError as err:
+        logging.error("")
 
 
 

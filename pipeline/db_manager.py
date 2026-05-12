@@ -44,7 +44,6 @@ class DBManager:
                 est_id                int     NOT NULL PRIMARY KEY,
                 elcode                text    NOT NULL,
                 sname                 text,
-                clean_name            text,
                 scomname              text
             );
             """,
@@ -52,13 +51,14 @@ class DBManager:
             CREATE TABLE IF NOT EXISTS inat_taxa (
                 taxon_id              int     PRIMARY KEY,
                 inat_name             text
-                exact_match           boolean CHECK (obscured IN (NULL, true, false))
             );
             """,
             """
             CREATE TABLE IF NOT EXISTS tracking_rel (
                 taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id),
-                est_id                int     NOT NULL REFERENCES tracking_taxa(est_id)
+                est_id                int     NOT NULL REFERENCES tracking_taxa(est_id),
+                exact_match           boolean CHECK (exact_match IN (NULL, true, false)),
+                PRIMARY KEY(taxon_id, est_id)
             );
             """,
             """
@@ -103,6 +103,36 @@ class DBManager:
                 taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id)
             );
             """,
+            """
+            CREATE VIEW IF NOT EXISTS mapping (
+                est_id, 
+                elcode, 
+                sname, 
+                scomname, 
+                taxon_id, 
+                inat_name, 
+                exact_match
+            ) AS SELECT (
+                tt.est_id, 
+                tt.elcode, 
+                tt.sname, 
+                tt.scomname, 
+                it.taxon_id, 
+                it.inat_name, 
+                tr.exact_match
+            )
+            FROM tracking_taxa AS tt
+            JOIN tracking_rel AS tr ON tt.est_id = tr.est_id
+            JOIN inat_taxa AS it ON tr.taxon_id = it.taxon_id;
+            """,
+            """
+            CREATE VIEW IF NOT EXISTS not_in_inat 
+            AS SELECT * 
+            FROM tracking_taxa AS tt
+            LEFT JOIN tracking_rel AS tr
+            ON tt.est_id = tr.est_id
+            WHERE tr.est_id IS NULL;
+            """
         ]
 
         try:
@@ -140,6 +170,47 @@ class DBManager:
             raise ValueError("Must be connected to a database")
 
 
+    def insert_mappings(self, mapping_df: pd.DataFrame):
+        """
+        Inserts new taxon mappings into the database
+        """
+        statements = [
+            """
+            INSERT OR IGNORE INTO tracking_taxa (est_id, elcode, sname, scomname)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(est_id) 
+            DO UPDATE SET 
+                elcode = excluded.elcode,
+                sname = excluded.sname,
+                scomname = excluded.scomname;
+            """,
+            """
+            INSERT OR IGNORE INTO inat_taxa (taxon_id, inat_name)
+            VALUES (?, ?)
+            ON CONFLICT(taxon_id) 
+            DO UPDATE SET 
+                inat_name = excluded.inat_name;
+            """,
+            """
+            INSERT OR IGNORE INTO tracking_rel (taxon_id, est_id, exact_match)
+            VALUES (?, ?, ?);
+            """
+        ]
+        with closing(self._conn.cursor()) as cursor:
+            cursor.executemany(
+                statements[0],
+                list(mapping_df[["est_id", "elcode", "sname", "scomname"]].itertuples(index=False))
+            )
+            cursor.executemany(
+                statements[1],
+                list(mapping_df[["taxon_id", "inat_name"]].itertuples(index=False))
+            )
+            cursor.executemany(
+                statements[2],
+                list(mapping_df[["taxon_id", "est_id", "exact_match"]].itertuples(index=False))
+            )
+
+
     def update_tracking(self, tracking_df: pd.DataFrame):
         """
         Updates database tracking list with the records in tracking_df. 
@@ -163,8 +234,9 @@ class DBManager:
             
             """
         self.check_connection()
-    
-        tracking_df.to_sql("temp_tracking", self._conn, if_exists="replace")
+
+        cols = ["est_id", "elcode", "sname", "scomname"]
+        tracking_df[cols].to_sql("temp_tracking", self._conn, if_exists="replace")
         with closing(self._conn.cursor()) as cursor:
             cursor.execute(statement)
             cursor.execute("DROP TABLE IF EXISTS temp_tracking")
@@ -210,9 +282,9 @@ class DBManager:
             it.taxon_id     AS taxon_id,
             it.inat_name    AS inat_name
         FROM tracking_taxa AS tt
-        LEFT JOIN tracking_rel AS tr
+        JOIN tracking_rel AS tr
             ON tt.est_id = tr.est_id
-        LEFT JOIN inat_taxa AS it
+        JOIN inat_taxa AS it
             ON tr.taxon_id = it.taxon_id;
         """
         self.check_connection()
