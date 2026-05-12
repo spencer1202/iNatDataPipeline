@@ -299,7 +299,8 @@ class TaxonCacheBuilder:
             "q"         : scientific_name,
             "per_page"  : 5,
             "order"     : "desc",
-            "order_by"  : "observations_count"
+            "order_by"  : "observations_count",
+            "fields"    : ["name", "id"]
         }
 
         # Make API request
