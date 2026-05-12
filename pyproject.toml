@@ -7,5 +7,10 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.13"
 
+[pytest]
+filterwarnings = [
+    'ignore:This pattern is interpreted as a regular expression'
+]
+
 [tool.pytest.ini_options]
 pythonpath = [".", "pipeline"]

@@ -8,9 +8,19 @@ class DBManager:
         self.db_file        : str = db_file
 
 
+    def __enter__(self):
+        self.connect()
+        return self
+    
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.commit()
+        self.close()
+
+
     def connect(self):
         """
-        Connect to sqlite database. Connection stored in self.db_connection. Closes previous connection if one was open.
+        Connect to sqlite database. Connection stored in self._conn. Closes previous connection if one was open.
         """
         if self._conn:
             self._conn.close()
@@ -34,7 +44,7 @@ class DBManager:
                 est_id                int     NOT NULL PRIMARY KEY,
                 elcode                text    NOT NULL,
                 sname                 text,
-                override_name         text,
+                clean_name            text,
                 scomname              text
             );
             """,
@@ -42,6 +52,7 @@ class DBManager:
             CREATE TABLE IF NOT EXISTS inat_taxa (
                 taxon_id              int     PRIMARY KEY,
                 inat_name             text
+                exact_match           boolean CHECK (obscured IN (NULL, true, false))
             );
             """,
             """
@@ -74,8 +85,8 @@ class DBManager:
                 id_agreements         int,
                 id_disagreements      int,
                 place_guess           text,
-                captive_cultivated    boolean NOT NULL CHECK (obscured IN (true, false)),
-                obscured              boolean NOT NULL CHECK (obscured IN (true, false))
+                captive_cultivated    boolean CHECK (captive_cultivated IN (NULL, true, false)),
+                obscured              boolean CHECK (obscured IN (NULL, true, false))
             );
             """,
             """
@@ -103,6 +114,7 @@ class DBManager:
             raise
         
         self.commit()
+
 
 
     def commit(self):
@@ -133,11 +145,8 @@ class DBManager:
         Updates database tracking list with the records in tracking_df. 
         Tracking dataframe must have columns [est_id, elcode, sname, scomname]
         """
-        self.check_connection()
-    
-        tracking_df.to_sql("temp_tracking", self._conn, if_exists="replace")
-        with closing(self._conn.cursor()) as cursor:
-            statement = """
+        
+        statement = """
             INSERT INTO tracking_taxa (est_id, elcode, sname, scomname)
             SELECT 
                 temp.est_id, 
@@ -153,25 +162,71 @@ class DBManager:
                 scomname = excluded.scomname
             
             """
+        self.check_connection()
+    
+        tracking_df.to_sql("temp_tracking", self._conn, if_exists="replace")
+        with closing(self._conn.cursor()) as cursor:
             cursor.execute(statement)
             cursor.execute("DROP TABLE IF EXISTS temp_tracking")
+
         self.commit()
+
 
     def insert_overrides(self, overrides_df: pd.DataFrame):
         """
         Insert name overrides into database
+
+        Returns:
+            Number of records updated
         """
-        self.check_connection()
-        overrides_df.to_sql("temp_overrides", self._conn, if_exists="replace")
         statement = """
         UPDATE tracking_taxa
-        SET override_name = temp.inat_name
+        SET clean_name = temp.inat_name
         FROM temp_overrides AS temp
         WHERE temp.est_id = tracking_taxa.est_id
         """
+        self.check_connection()
+
+        overrides_df.to_sql("temp_overrides", self._conn, if_exists="replace")
+        with closing(self._conn.cursor()) as cursor:
+            cursor.execute(statement)
+            count = cursor.rowcount
+            cursor.execute("DROP TABLE IF EXISTS temp_overrides")
+
+        self.commit()
+        return count
 
 
+    def get_mappings(self) -> pd.DataFrame:
+        """
+        Queries the iNat database for taxon mappings
+        """
+        query = """
+        SELECT 
+            tt.est_id       AS est_id,
+            tt.elcode       AS elcode,
+            tt.sname        AS sname,
+            tt.scomname     AS scomname,
+            it.taxon_id     AS taxon_id,
+            it.inat_name    AS inat_name
+        FROM tracking_taxa AS tt
+        LEFT JOIN tracking_rel AS tr
+            ON tt.est_id = tr.est_id
+        LEFT JOIN inat_taxa AS it
+            ON tr.taxon_id = it.taxon_id;
+        """
+        self.check_connection()
 
+        with closing(self._conn.cursor()) as cursor:
+            result = cursor.execute(query)
+            columns = [col[0] for col in cursor.description]
+            df = pd.DataFrame(
+                result.fetchall(),
+                columns=columns
+            )
+        return df
+
+        
     
 
     def __del__(self):
