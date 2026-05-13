@@ -5,6 +5,10 @@ import pandas as pd
 import datetime as dt
 import logging
 from configparser import ConfigParser
+import requests
+import prison
+import json
+import time
 
 from db_manager import DBManager
 import helpers
@@ -22,17 +26,26 @@ class ObservationQuery:
                 Database manager object for accessing the local database
             config:
                 ConfigParser object to get configuration options from. 
-                Reads from "observations" section to get place ID, quality grades, records per page, and 
+                Reads from "observations" section to get place ID, quality grades, records per page, observation fields JSON file, and 
                 taxon batch size.
         """
-        self.db_manager = db_manager
+
         try:
-            self.place_id        = int(config["observations"]["place_id"])
-            self.quality_grade   = config["observations"]["quality_grade"]
-            self.per_page        = int(config["observations"]["per_page"])
-            self.batch_size      = int(config["observations"]["batch_size"])
+            self.db_manager     = db_manager                                        # Database manager object
+            self.place_id       = int(config["observations"]["place_id"])           # Place ID to filter search (e.g. Oregon = 10)
+            self.per_page       = int(config["observations"]["per_page"])           # Number of records to return per request
+            self.batch_size     = int(config["observations"]["batch_size"])         # Taxon ID batch size for querying observations
+            self.quality_grade  = config["observations"]["quality_grade"]           # iNaturalist quality grade filter(s)
+                                                                                    # Comma separated (e.g. "research" or "research,casual")
+            self.fields_json    = config["observations"]["fields_json"]             # JSON file with the observation fields to query for
+            self.update_days    = int(config["observations"]["update_before_days"]) # Only query for taxa that were last updated at least 
+                                                                                    # this many days ago
+        
         except TypeError:
-            logger.error("Malformed observation configuration options.")
+            logger.error("Malformed observation configuration options (could not convert to integer).")
+            raise
+        except KeyError:
+            logger.error("Malformed observation configuration options (missing section or field).")
             raise
 
 
@@ -67,8 +80,46 @@ class ObservationQuery:
         return date_taxon_map
 
 
-    def download_observations(self, ids: list, params: dict, headers: str):
+    def fetch_pages(self, observations: list, params: dict, headers: str) -> list:
+        url = "https://api.inaturalist.org/v2/observations"
+        
+        page = 1
+        while True:
+            params["page"] = page
+            try:
+                response = requests.get(
+                    url=url,
+                    headers=headers,
+                    params=params,
+                    timeout=30
+                )
+                response.raise_for_status()
+                data = response.json()
+                results = data.get("results", [])
+                observations.extend(results)
+                time.sleep(0.5)
+
+                if len(results) < self.per_page:
+                    break
+                page += 1
+                time.sleep(0.5)
+                
+            except requests.Timeout:
+                logger.error(f"Request for taxon {params["taxon_id"]} timed out.")
+        
+        return observations
+            
+
+    def download_observations(self, ids: list, params: dict, headers: str) -> list:
         print(f"Downloading batch:\n{ids}\n")
+
+        observations = []
+        params["taxon_id"] = ",".join(str(id) for id in ids)
+        observations = self.fetch_pages(observations, params, headers)
+        
+        return observations
+
+            
     
 
 
@@ -76,9 +127,6 @@ class ObservationQuery:
         """
         Downloads observations from iNaturalist using the iNaturalist taxon IDs in the local database.
         """
-        # Get configurations
-
-       
         # Set up authentication
         if not auth.get_access_token():
             logger.error("No access token in authentication object")
@@ -93,6 +141,15 @@ class ObservationQuery:
             'order_by': 'created_at',
             'order': 'desc',
         }
+
+        # Get query fields in RISON format from JSON file
+        try:
+            with open(self.fields_json, "r") as fp:
+                fields_dict = json.load(fp)
+            base_params["fields"] = prison.dumps(fields_dict)
+        except:
+            logger.error(f"Failed to load query observation fields from file: {self.fields_json}.")
+            return
 
         # Get iNat taxa from database
         with self.db_manager as db:
@@ -112,4 +169,6 @@ class ObservationQuery:
             
             for i, batch in enumerate(batches, start=1):
                 results = self.download_observations(batch, base_params, headers)
+                for result in results:
+                    print(result)
             

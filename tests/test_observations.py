@@ -13,7 +13,9 @@ base_config["observations"] = {
         "place_id": 10,
         "quality_grade": "research",
         "per_page": 200,
-        "batch_size": 50
+        "batch_size": 50,
+        "fields_json": r"pipeline\obs_fields.json",
+        "update_before_days": 30
     }
 username = "hspencer1202"
 

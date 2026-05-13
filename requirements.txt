@@ -4,3 +4,4 @@ pyinaturalist
 dotenv
 pytest
 setuptools
+prison
