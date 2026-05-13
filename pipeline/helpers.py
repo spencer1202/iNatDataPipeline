@@ -60,9 +60,11 @@ class iNaturalistAuth:
         # Check if user wants to use current credentials
         if username and password:
             if username == user:
-                return pyinaturalist.get_access_token()
+                self.access_token = pyinaturalist.get_access_token()
+                return
             if get_yn_input(f"Found iNaturalist credentials for {username}, not {user}. Would you like to proceed with these credentials instead? (Y/N): "):
-                return pyinaturalist.get_access_token()
+                self.access_token = pyinaturalist.get_access_token()
+                return
         else:
             print("No saved credentials found.")
             
@@ -79,6 +81,7 @@ class iNaturalistAuth:
         print("Credentials saved to keyring for future use.")
         
         self.access_token = pyinaturalist.get_access_token()
+        return self.access_token
         
 
     def get_access_token(self) -> str:
@@ -91,5 +94,5 @@ class iNaturalistAuth:
         
         headers = {}
         headers["User-Agent"] = self.access_token
-        headers["Authorization"] = f"Bearer {self.api_token}"
+        headers["Authorization"] = f"Bearer {self.access_token}"
         return headers

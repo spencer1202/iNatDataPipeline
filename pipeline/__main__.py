@@ -84,19 +84,20 @@ def main():
 
     auth: iNaturalistAuth = iNaturalistAuth(config["authentication"]["user_agent"])
     auth.generate_access_token(config["authentication"]["username"])
+    if not auth.get_access_token():
+        logger.error("Could not obtain OAuth2 access token")
+        return
 
     db_manager = DBManager(config["DEFAULT"]["db_file"])
     taxon_mapper = taxa.TaxonMappingBuilder(db_manager)
     
-    try:
-        taxon_mapper.build_mapping(
-            config["taxon_map"]["tracking_list"],
-            config["taxon_map"]["name_overrides_file"],
-            auth,
-            args.rebuild
-        )
-    except FileNotFoundError as err:
-        logging.error("")
+    taxon_mapper.build_mapping(
+        # TODO add error checking for non-existent file
+        config["taxon_map"]["tracking_list"],
+        config["taxon_map"]["name_overrides_file"],
+        auth,
+        args.rebuild
+    )
 
 
 

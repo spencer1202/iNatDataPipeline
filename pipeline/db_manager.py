@@ -49,8 +49,9 @@ class DBManager:
             """,
             """
             CREATE TABLE IF NOT EXISTS inat_taxa (
-                taxon_id              int     PRIMARY KEY,
-                inat_name             text
+                taxon_id              int     PRIMARY KEY NOT NULL,
+                inat_name             text,
+                date_updated          text
             );
             """,
             """
@@ -63,14 +64,14 @@ class DBManager:
             """,
             """
             CREATE TABLE IF NOT EXISTS users (
-                user_id               int     PRIMARY KEY,
+                user_id               int     PRIMARY KEY NOT NULL,
                 login                 text,
                 name                  text
             );
             """,
             """
             CREATE TABLE IF NOT EXISTS observations (
-                observation_id        int     PRIMARY KEY,
+                observation_id        int     PRIMARY KEY NOT NULL,
                 observer_id           int     NOT NULL REFERENCES users(user_id),
                 taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id),
                 license               text,
@@ -91,13 +92,13 @@ class DBManager:
             """,
             """
             CREATE TABLE IF NOT EXISTS experts (
-                user_id               int     PRIMARY KEY REFERENCES users(user_id),
+                user_id               int     PRIMARY KEY REFERENCES users(user_id) NOT NULL,
                 expertise             text
             );
             """,
             """
             CREATE TABLE IF NOT EXISTS identifications (
-                identification_id     int     PRIMARY KEY,
+                identification_id     int     PRIMARY KEY NOT NULL,
                 observation_id        int     NOT NULL REFERENCES observations(observation_id),
                 user_id               int     NOT NULL REFERENCES users(user_id),
                 taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id)
@@ -211,81 +212,67 @@ class DBManager:
             )
 
 
-    def update_tracking(self, tracking_df: pd.DataFrame):
-        """
-        Updates database tracking list with the records in tracking_df. 
-        Tracking dataframe must have columns [est_id, elcode, sname, scomname]
-        """
+    # def update_tracking(self, tracking_df: pd.DataFrame):
+    #     """
+    #     Updates database tracking list with the records in tracking_df. 
+    #     Tracking dataframe must have columns [est_id, elcode, sname, scomname]
+    #     """
         
-        statement = """
-            INSERT INTO tracking_taxa (est_id, elcode, sname, scomname)
-            SELECT 
-                temp.est_id, 
-                temp.elcode, 
-                temp.sname, 
-                temp.scomname
-            FROM temp_tracking AS temp
-            WHERE temp.est_id = temp.est_id
-            ON CONFLICT (est_id)
-            DO UPDATE SET 
-                elcode = excluded.elcode,
-                sname = excluded.sname,
-                scomname = excluded.scomname
+    #     statement = """
+    #         INSERT INTO tracking_taxa (est_id, elcode, sname, scomname)
+    #         SELECT 
+    #             temp.est_id, 
+    #             temp.elcode, 
+    #             temp.sname, 
+    #             temp.scomname
+    #         FROM temp_tracking AS temp
+    #         WHERE temp.est_id = temp.est_id
+    #         ON CONFLICT (est_id)
+    #         DO UPDATE SET 
+    #             elcode = excluded.elcode,
+    #             sname = excluded.sname,
+    #             scomname = excluded.scomname
             
-            """
-        self.check_connection()
+    #         """
+    #     self.check_connection()
 
-        cols = ["est_id", "elcode", "sname", "scomname"]
-        tracking_df[cols].to_sql("temp_tracking", self._conn, if_exists="replace")
-        with closing(self._conn.cursor()) as cursor:
-            cursor.execute(statement)
-            cursor.execute("DROP TABLE IF EXISTS temp_tracking")
+    #     cols = ["est_id", "elcode", "sname", "scomname"]
+    #     tracking_df[cols].to_sql("temp_tracking", self._conn, if_exists="replace")
+    #     with closing(self._conn.cursor()) as cursor:
+    #         cursor.execute(statement)
+    #         cursor.execute("DROP TABLE IF EXISTS temp_tracking")
 
-        self.commit()
+    #     self.commit()
 
 
-    def insert_overrides(self, overrides_df: pd.DataFrame):
+    # def insert_overrides(self, overrides_df: pd.DataFrame):
+    #     """
+    #     Insert name overrides into database
+
+    #     Returns:
+    #         Number of records updated
+    #     """
+    #     statement = """
+    #     UPDATE tracking_taxa
+    #     SET clean_name = temp.inat_name
+    #     FROM temp_overrides AS temp
+    #     WHERE temp.est_id = tracking_taxa.est_id
+    #     """
+    #     self.check_connection()
+
+    #     overrides_df.to_sql("temp_overrides", self._conn, if_exists="replace")
+    #     with closing(self._conn.cursor()) as cursor:
+    #         cursor.execute(statement)
+    #         count = cursor.rowcount
+    #         cursor.execute("DROP TABLE IF EXISTS temp_overrides")
+
+    #     self.commit()
+    #     return count
+
+
+    def _select_query(self, query) -> pd.DataFrame:
         """
-        Insert name overrides into database
-
-        Returns:
-            Number of records updated
-        """
-        statement = """
-        UPDATE tracking_taxa
-        SET clean_name = temp.inat_name
-        FROM temp_overrides AS temp
-        WHERE temp.est_id = tracking_taxa.est_id
-        """
-        self.check_connection()
-
-        overrides_df.to_sql("temp_overrides", self._conn, if_exists="replace")
-        with closing(self._conn.cursor()) as cursor:
-            cursor.execute(statement)
-            count = cursor.rowcount
-            cursor.execute("DROP TABLE IF EXISTS temp_overrides")
-
-        self.commit()
-        return count
-
-
-    def get_mappings(self) -> pd.DataFrame:
-        """
-        Queries the iNat database for taxon mappings
-        """
-        query = """
-        SELECT 
-            tt.est_id       AS est_id,
-            tt.elcode       AS elcode,
-            tt.sname        AS sname,
-            tt.scomname     AS scomname,
-            it.taxon_id     AS taxon_id,
-            it.inat_name    AS inat_name
-        FROM tracking_taxa AS tt
-        JOIN tracking_rel AS tr
-            ON tt.est_id = tr.est_id
-        JOIN inat_taxa AS it
-            ON tr.taxon_id = it.taxon_id;
+        Helper function for doing a simple select query and putting the results in a dataframe
         """
         self.check_connection()
 
@@ -298,7 +285,20 @@ class DBManager:
             )
         return df
 
-        
+
+    def get_mappings(self) -> pd.DataFrame:
+        """
+        Queries the iNat database for taxon mappings
+        """
+        return self._select_query("SELECT * FROM mapping;")
+
+    
+    def get_inat_taxa(self) -> pd.DataFrame:
+        """
+        Queries database for iNaturalist taxa
+        """
+        return self._select_query("SELECT * FROM inat_taxa")
+
     
 
     def __del__(self):
