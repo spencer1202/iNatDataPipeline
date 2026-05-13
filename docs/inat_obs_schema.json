@@ -81,7 +81,7 @@
           "taxon": {
             "id": 0,
             ...,
-	  }
+	        }
           "taxon_change": {
             "id": 0,
             "type": "string"

@@ -256,10 +256,13 @@ class TaxonMappingBuilder:
         logger.info(f"Loaded {len(tracking_df)} taxa from tracking list {tracking_file}.")
         tracking_df = TaxonMappingBuilder.rename_tracking_cols(tracking_df)
 
+        # Insert name overrides
         logger.info("Inserting name overrides...")
         tracking_df = TaxonMappingBuilder.insert_overrides(tracking_df, overrides_df)
         overrides_count = len(tracking_df[tracking_df["sname_clean"].notna()])
         logger.info(f"Updated {overrides_count} names.")
+
+        # Preprocess names
         logger.info("Preprocessing scientific names...")
         tracking_df = TaxonMappingBuilder.preprocess(tracking_df)
 

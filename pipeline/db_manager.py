@@ -9,14 +9,24 @@ class DBManager:
 
 
     def __enter__(self):
+        """
+        Called when entering a "with" clause. Opens connection to database.
+        """
         self.connect()
         return self
     
 
     def __exit__(self, exc_type, exc_value, traceback):
+        """
+        Called when exiting a "with" clause. Commits database transaction and closes connection.
+        """
         self.commit()
         self.close()
 
+    
+    def __del__(self):
+        if self._conn:
+            self._conn.close()
 
     def connect(self):
         """
@@ -113,7 +123,7 @@ class DBManager:
                 taxon_id, 
                 inat_name, 
                 exact_match
-            ) AS SELECT (
+            ) AS SELECT 
                 tt.est_id, 
                 tt.elcode, 
                 tt.sname, 
@@ -121,7 +131,6 @@ class DBManager:
                 it.taxon_id, 
                 it.inat_name, 
                 tr.exact_match
-            )
             FROM tracking_taxa AS tt
             JOIN tracking_rel AS tr ON tt.est_id = tr.est_id
             JOIN inat_taxa AS it ON tr.taxon_id = it.taxon_id;
@@ -133,6 +142,13 @@ class DBManager:
             LEFT JOIN tracking_rel AS tr
             ON tt.est_id = tr.est_id
             WHERE tr.est_id IS NULL;
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS fk_cascade_delete_tracking
+            AFTER DELETE ON inat_taxa
+            BEGIN
+                DELETE FROM tracking_rel WHERE taxon_id = OLD.taxon_id;
+            END;
             """
         ]
 
@@ -145,7 +161,6 @@ class DBManager:
             raise
         
         self.commit()
-
 
 
     def commit(self):
@@ -212,6 +227,42 @@ class DBManager:
             )
 
 
+    def _select_query(self, query) -> pd.DataFrame:
+        """
+        Helper function for doing a simple select query and putting the results in a dataframe
+        """
+        self.check_connection()
+
+        with closing(self._conn.cursor()) as cursor:
+            result = cursor.execute(query)
+            columns = [col[0] for col in cursor.description]
+            df = pd.DataFrame(
+                result.fetchall(),
+                columns=columns
+            )
+        return df
+
+
+    def get_mappings(self) -> pd.DataFrame:
+        """
+        Queries the iNat database for taxon mappings
+        """
+        return self._select_query("SELECT * FROM mapping")
+
+    
+    def get_inat_taxa(self) -> pd.DataFrame:
+        """
+        Queries database for iNaturalist taxa
+        """
+        return self._select_query("SELECT * FROM inat_taxa")
+
+    
+
+
+
+
+
+
     # def update_tracking(self, tracking_df: pd.DataFrame):
     #     """
     #     Updates database tracking list with the records in tracking_df. 
@@ -268,39 +319,3 @@ class DBManager:
 
     #     self.commit()
     #     return count
-
-
-    def _select_query(self, query) -> pd.DataFrame:
-        """
-        Helper function for doing a simple select query and putting the results in a dataframe
-        """
-        self.check_connection()
-
-        with closing(self._conn.cursor()) as cursor:
-            result = cursor.execute(query)
-            columns = [col[0] for col in cursor.description]
-            df = pd.DataFrame(
-                result.fetchall(),
-                columns=columns
-            )
-        return df
-
-
-    def get_mappings(self) -> pd.DataFrame:
-        """
-        Queries the iNat database for taxon mappings
-        """
-        return self._select_query("SELECT * FROM mapping;")
-
-    
-    def get_inat_taxa(self) -> pd.DataFrame:
-        """
-        Queries database for iNaturalist taxa
-        """
-        return self._select_query("SELECT * FROM inat_taxa")
-
-    
-
-    def __del__(self):
-        if self._conn:
-            self._conn.close()

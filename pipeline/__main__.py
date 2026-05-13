@@ -7,6 +7,7 @@ import taxa
 import helpers
 from helpers import iNaturalistAuth
 from db_manager import DBManager
+from observations import ObservationQuery
 
 logger = logging.getLogger('pipeline')
 logger.setLevel(logging.INFO)
@@ -88,6 +89,7 @@ def main():
         logger.error("Could not obtain OAuth2 access token")
         return
 
+    logger.info(f"Connecting to database: {config["DEFAULT"]["db_file"]}.")
     db_manager = DBManager(config["DEFAULT"]["db_file"])
     taxon_mapper = taxa.TaxonMappingBuilder(db_manager)
     
@@ -99,6 +101,9 @@ def main():
         args.rebuild
     )
 
+
+
+    observation_querier = ObservationQuery(db_manager, config)
 
 
 

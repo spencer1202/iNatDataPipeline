@@ -9,6 +9,7 @@
 	  "type": true
 	},
 	"geoprivacy": true,
+	"taxon_geoprivacy": true,
 	"identifications": 
 	  {
 		"id": true,

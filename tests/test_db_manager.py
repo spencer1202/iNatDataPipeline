@@ -3,7 +3,7 @@ import pandas as pd
 
 from pipeline.db_manager import DBManager
 
-db_file = "inat.db"
+db_file = "tests/test.db"
 
 def test_setup_db():
     manager = DBManager(db_file)
@@ -13,8 +13,9 @@ def test_setup_db():
 
 def test_get_mappings():
     manager = DBManager(db_file)
-    manager.connect()
-    df = manager.get_mappings()
+    with manager as db:
+        db.setup_db()
+        df = db.get_mappings()
     print(df)
     print(f"\n\nMappings: \n{df}")
 
