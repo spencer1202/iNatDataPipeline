@@ -1,12 +1,7 @@
-from dotenv import load_dotenv
-import getpass
-import keyring
 import os
+import logging
+import argparse
 from configparser import ConfigParser
-
-from pyinaturalist.constants import KEYRING_KEY
-import pyinaturalist
-
 
 def get_yn_input(msg: str) -> bool:
     """
@@ -24,75 +19,75 @@ def get_yn_input(msg: str) -> bool:
             print("Invalid input.")
 
 
-def load_config(config_file: str) -> ConfigParser:
-    """Load configuration object from file"""
+def parse_config(args: argparse.Namespace) -> ConfigParser:
+    """
+    Parse config file and replace options with arguments where specified.
+
+    Args:
+        args: Namespace object from argparser
+    Returns:
+        ConfigParser object loaded with config options
+    """
     try:
         config = ConfigParser()
-        config.read(config_file)
-        return config
+        config.read(args.config)
     except:
-        print(f"Failed to load config file: {config_file}")
+        print(f"Failed to load config file: {args.config}")
         raise
 
-    # TODO validate config
+    if args.username:
+        config["authentication"]["username"] = args.username
+    if args.tracking:
+        config["taxon_map"]["tracking_list"] = args.tracking
+    if args.database:
+        config["DEFAULT"]["db_file"] = args.database
+
+    return config
 
 
-class iNaturalistAuth:
+def logging_setup(logger: logging.Logger, console_level: int, file_level: int, log_folder: str = "logs", log_file: str = "taxon_mapping.log"):
+    # Make sure name maps folder exists
+    os.makedirs(log_folder, exist_ok=True)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)
+    console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+
+    file_handler = logging.FileHandler(os.path.join(log_folder, log_file))
+    file_handler.setLevel(file_level)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M"))
+
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+
+def parse_args() -> argparse.Namespace:
     """
-    Helper class that handles getting iNaturalist access tokens and request headers.
+    Parse command line arguments.
     """
-    def __init__(self, user_agent: str = "iNat_ORBIC_DataPipeline/1.0"):
-        self.user_agent: str = user_agent
-        self.access_token: str = None
+    argparser = argparse.ArgumentParser(
+        prog="iNaturalistDataPipeline",
+        description="Command line tool for pulling observation data from iNaturalist."
+    )
+    argparser.add_argument("command",
+                           help="[taxa | download | members | export] - which stage of the pipeline you'd like to run.")
+    argparser.add_argument("-c", "--config", 
+                           help="Specify config file.",
+                           default="config.ini"
+    )
+    argparser.add_argument("-u", "--username", 
+                           help="iNaturalist username (overrides config)."
+    )
+    argparser.add_argument("-t", "--tracking",
+                           help="Specify tracking list file (overrides config)."
+    )
+    argparser.add_argument("-d", "--database",
+                           help="Specify database file (overrides config)"
+    )
+    argparser.add_argument("-r", "--rebuild_taxa",
+                           action="store_true",
+                           help="Force rebuild taxon mapping (not recommended)."
+    )
+    return argparser.parse_args()
 
-    def generate_access_token(self, user: str) -> str:
-        """
-        Get iNaturalist authorization access token.
-        Fetches credentials from system keyring. If not present, prompts user for credentials and saves them to system keyring.
-        """
-        # Try to load app secret and ID from .env file
-        if not load_dotenv('.env') or not os.environ.get("INAT_APP_ID") or not os.environ.get("INAT_APP_SECRET"):
-            raise Exception("App credentials not present in environment file.")
 
-        username = keyring.get_password(KEYRING_KEY, 'username')
-        password = keyring.get_password(KEYRING_KEY, 'password')
-
-        # Check if user wants to use current credentials
-        if username and password:
-            if username == user:
-                self.access_token = pyinaturalist.get_access_token()
-                return
-            if get_yn_input(f"Found iNaturalist credentials for {username}, not {user}. Would you like to proceed with these credentials instead? (Y/N): "):
-                self.access_token = pyinaturalist.get_access_token()
-                return
-        else:
-            print("No saved credentials found.")
-            
-        print("Enter your iNaturalist credentials below.")
-        username = input('Username: ')
-        password = getpass.getpass()
-
-        pyinaturalist.auth.set_keyring_credentials(
-            username    = username,
-            password    = password,
-            app_id      = os.environ['INAT_APP_ID'],
-            app_secret  = os.environ['INAT_APP_SECRET']
-        )
-        print("Credentials saved to keyring for future use.")
-        
-        self.access_token = pyinaturalist.get_access_token()
-        return self.access_token
-        
-
-    def get_access_token(self) -> str:
-        return self.access_token
-
-    def get_auth_headers(self):
-        """Get authentication headers for API requests"""
-        if not self.access_token:
-            return None
-        
-        headers = {}
-        headers["User-Agent"] = self.access_token
-        headers["Authorization"] = f"Bearer {self.access_token}"
-        return headers

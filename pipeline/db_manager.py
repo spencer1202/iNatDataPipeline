@@ -111,7 +111,8 @@ class DBManager:
                 identification_id     int     PRIMARY KEY NOT NULL,
                 observation_id        int     NOT NULL REFERENCES observations(observation_id),
                 user_id               int     NOT NULL REFERENCES users(user_id),
-                taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id)
+                taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id),
+                created_at            text
             );
             """,
             """

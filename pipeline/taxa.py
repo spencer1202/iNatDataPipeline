@@ -9,7 +9,7 @@ import numpy as np
 import re
 import time
 
-from helpers import iNaturalistAuth
+from inaturalist_auth import iNaturalistAuth
 from db_manager import DBManager
 
 logger = logging.getLogger('pipeline')
@@ -202,7 +202,6 @@ class TaxonMappingBuilder:
         today = datetime.date.today()
 
         #################### Querying ####################
-        logger.info("Beginning taxon queries...")
         for _, row in df.iterrows():
             sname = row["sname_clean"]
             logger.info(f"{process_num:>4} / {process_total}\t{sname}")
@@ -235,17 +234,14 @@ class TaxonMappingBuilder:
 
     
     def build_mapping(self, tracking_file: str, overrides_file: str, auth: iNaturalistAuth, force_rebuild: bool = False):
-        logger.info("*** Running TaxonCacheBuilder ***")
-        logger.info("---------------------------------")
-
-
         # Import overrides list
+        logger.info("Loading tracking list and name overrides...")
         try:
             overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
         except FileNotFoundError as err:
             logger.error(f"Could not find overrides file: {overrides_file}.")
             return
-        logger.info(f"Loaded {len(overrides_df)} name overrides from {overrides_file}.")
+        logger.debug(f"* Loaded {len(overrides_df)} name overrides from {overrides_file}.")
 
         # Import and clean tracking list
         try:
@@ -253,14 +249,14 @@ class TaxonMappingBuilder:
         except FileNotFoundError as err:
             logger.error(f"Could not find tracking file: {tracking_file}.")
             return
-        logger.info(f"Loaded {len(tracking_df)} taxa from tracking list {tracking_file}.")
+        logger.debug(f"* Loaded {len(tracking_df)} taxa from tracking list {tracking_file}.")
         tracking_df = TaxonMappingBuilder.rename_tracking_cols(tracking_df)
 
         # Insert name overrides
         logger.info("Inserting name overrides...")
         tracking_df = TaxonMappingBuilder.insert_overrides(tracking_df, overrides_df)
         overrides_count = len(tracking_df[tracking_df["sname_clean"].notna()])
-        logger.info(f"Updated {overrides_count} names.")
+        logger.debug(f"* Updated {overrides_count} names.")
 
         # Preprocess names
         logger.info("Preprocessing scientific names...")
@@ -275,24 +271,26 @@ class TaxonMappingBuilder:
             logger.info("Loading existing mappings...")
             with self.db_manager as db:
                 mapping_df = db.get_mappings()
-            logger.info(f"Retrieved {len(mapping_df)} taxon mappings from database.")
+            logger.debug(f"* Retrieved {len(mapping_df)} taxon mappings from database.")
         else:
             logger.info("Rebuilding taxon mappings from scratch...")
             mapping_df = pd.DataFrame(columns=["est_id", "elcode", "sname", "scomname", "taxon_id", "inat_name"])
 
+        logger.info("Filtering for taxa that don't have mappings yet...")
         match_mask = tracking_df["est_id"].isin(mapping_df["est_id"])
         to_match = tracking_df[~match_mask]
         if len(to_match) == 0:
-            logger.info("All taxa on tracking list are already present in mappings.")
+            logger.warning("* All taxa on tracking list are already present in mappings.")
         else:
-            logger.info(f"Found {len(to_match)} tracking list entries not present in existing mappings.")
+            logger.debug(f"* Found {len(to_match)} tracking list entries not present in existing mappings.")
             to_match = TaxonMappingBuilder.get_undescribed_names(to_match)
-            logger.info(f"Undescribed taxa: {len(to_match[~to_match["exact_match"]])}")
+            logger.debug(f"Undescribed taxa: {len(to_match[~to_match["exact_match"]])}")
             
+            logger.info("")
+            logger.info("Beginning taxon queries...")
             new_mappings = TaxonMappingBuilder.get_new_mappings(to_match, auth)
 
             with self.db_manager as db:
                 db.insert_mappings(new_mappings)
-
-        logger.info("Done!")
-        logger.info("----------------------------------\n")
+        
+  
