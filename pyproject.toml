@@ -18,6 +18,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = ["inatdatapipeline"]  # ["*"] by default
+exclude = ["tests"]
 
 
 [build-system]
