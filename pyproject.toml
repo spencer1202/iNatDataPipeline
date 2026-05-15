@@ -13,7 +13,7 @@ dependencies = [
     "dotenv",
     "pytest",
     "setuptools",
-    "prison
+    "prison"
 ]
 
 [build-system]
