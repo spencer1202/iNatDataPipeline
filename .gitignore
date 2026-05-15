@@ -6,8 +6,12 @@ logs
 
 ### Python ###
 .venv
-pipeline/__pycache__
+inatdatapipeline/__pycache__
 tests/__pycache__
 
 ### Pytest ###
 .pytest_cache
+
+## Build ###
+dist
+inatdatapipeline.egg-info
