@@ -16,6 +16,10 @@ dependencies = [
     "prison"
 ]
 
+[tool.setuptools.packages.find]
+include = ["inatdatapipeline"]  # ["*"] by default
+
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

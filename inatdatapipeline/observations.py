@@ -10,8 +10,8 @@ import prison
 import json
 import time
 
-from db_manager import DBManager
-from inaturalist_auth import iNaturalistAuth
+from .db_manager import DBManager
+from .inaturalist_auth import iNaturalistAuth
 
 logger = logging.getLogger('pipeline')
 
@@ -236,7 +236,7 @@ class ObservationQuery:
             base_params["fields"] = prison.dumps(fields_dict)
         except:
             logger.error(f"Failed to load query observation fields from file: {self.fields_json}.")
-            raise
+            return
 
         # Get iNat taxa from database
         with self.db_manager as db:

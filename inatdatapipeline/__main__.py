@@ -3,11 +3,11 @@ import logging
 import argparse
 from configparser import ConfigParser
 
-import taxa
-import helpers
-from inaturalist_auth import iNaturalistAuth
-from db_manager import DBManager
-from observations import ObservationQuery
+from . import taxa
+from . import helpers
+from .inaturalist_auth import iNaturalistAuth
+from .db_manager import DBManager
+from .observations import ObservationQuery
 
 logger = logging.getLogger('pipeline')
 logger.setLevel(logging.INFO)

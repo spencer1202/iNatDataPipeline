@@ -6,10 +6,11 @@ import pandas as pd
 
 from inatdatapipeline.taxa import TaxonMappingBuilder
 import inatdatapipeline.db_manager as db_manager
+from inatdatapipeline.inaturalist_auth import iNaturalistAuth
 
 config = "config.ini"
 
-tracking_file = "taxonomy/tracking_lists/all_tracked.csv"
+tracking_file = "taxonomy/tracking_lists/elcode_tracking_k.csv"
 mapping_file = "tests/test_mappings.csv"
 overrides_file = "taxonomy/name_maps/name_overrides.csv"
 
@@ -43,16 +44,15 @@ def test_preprocess_long():
 
     for name in tracking_df["SNAME"].to_list():
         result = TaxonMappingBuilder.preprocess_name(name)
-        #print(f"Before: {name:<50}After: {result}")
         assert TaxonMappingBuilder.preprocess_name(name)
 
 
 def test_build():
     builder = TaxonMappingBuilder(db_manager.DBManager("inat.db"))
+    auth = iNaturalistAuth()
     df = builder.build_mapping(
         tracking_file,
         overrides_file,
+        auth,
         False
     )
-    print(df)
-    print(f"\n{df[~df["exact_match"]]}")

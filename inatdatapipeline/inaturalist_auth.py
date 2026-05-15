@@ -5,7 +5,7 @@ import pyinaturalist
 import getpass
 import os
 
-import helpers
+from . import helpers
 
 class iNaturalistAuth:
     """

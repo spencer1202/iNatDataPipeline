@@ -9,8 +9,8 @@ import numpy as np
 import re
 import time
 
-from inaturalist_auth import iNaturalistAuth
-from db_manager import DBManager
+from .inaturalist_auth import iNaturalistAuth
+from .db_manager import DBManager
 
 logger = logging.getLogger('pipeline')
 
