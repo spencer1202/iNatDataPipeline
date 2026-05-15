@@ -5,9 +5,9 @@ import numpy as np
 import logging
 import os
 
-from pipeline.observations import ObservationQuery
-from pipeline.db_manager import DBManager
-from pipeline.inaturalist_auth import iNaturalistAuth
+from inatdatapipeline.observations import ObservationQuery
+from inatdatapipeline.db_manager import DBManager
+from inatdatapipeline.inaturalist_auth import iNaturalistAuth
 
 db_file = "tests/test_small.db"
 base_config = ConfigParser()

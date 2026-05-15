@@ -1,11 +1,24 @@
 [project]
-name = "iNaturalist_ORBIC_data_pipeline"
+name = "inatdatapipeline"
 version = "0.0.1"
 authors = [
     { name = "Spencer Henwood", email = "henwood@pdx.edu" }
 ]
 readme = "README.md"
 requires-python = ">=3.13"
+dependencies = [
+    "pandas",
+    "requests",
+    "pyinaturalist",
+    "dotenv",
+    "pytest",
+    "setuptools",
+    "prison
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
 
 [pytest]
 filterwarnings = [

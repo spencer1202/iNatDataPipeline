@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
 
-from pipeline.db_manager import DBManager
+from inatdatapipeline.db_manager import DBManager
 
 db_file = "tests/test.db"
 

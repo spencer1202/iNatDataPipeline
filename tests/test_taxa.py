@@ -4,8 +4,8 @@ import time
 import os
 import pandas as pd
 
-from pipeline.taxa import TaxonMappingBuilder
-import pipeline.db_manager as db_manager
+from inatdatapipeline.taxa import TaxonMappingBuilder
+import inatdatapipeline.db_manager as db_manager
 
 config = "config.ini"
 
