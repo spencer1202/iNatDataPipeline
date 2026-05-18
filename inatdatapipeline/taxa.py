@@ -9,8 +9,8 @@ import numpy as np
 import re
 import time
 
-from .inaturalist_auth import iNaturalistAuth
-from .db_manager import DBManager
+from inaturalist_auth import iNaturalistAuth
+from db_manager import DBManager
 
 logger = logging.getLogger('pipeline')
 
@@ -235,7 +235,7 @@ class TaxonMappingBuilder:
     
     def build_mapping(self, tracking_file: str, overrides_file: str, auth: iNaturalistAuth, force_rebuild: bool = False):
         # Import overrides list
-        logger.info("Loading tracking list and name overrides...")
+        logger.debug("Loading tracking list and name overrides...")
         try:
             overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
         except FileNotFoundError as err:
@@ -253,13 +253,13 @@ class TaxonMappingBuilder:
         tracking_df = TaxonMappingBuilder.rename_tracking_cols(tracking_df)
 
         # Insert name overrides
-        logger.info("Inserting name overrides...")
+        logger.debug("Inserting name overrides...")
         tracking_df = TaxonMappingBuilder.insert_overrides(tracking_df, overrides_df)
         overrides_count = len(tracking_df[tracking_df["sname_clean"].notna()])
         logger.debug(f"* Updated {overrides_count} names.")
 
         # Preprocess names
-        logger.info("Preprocessing scientific names...")
+        logger.debug("Preprocessing scientific names...")
         tracking_df = TaxonMappingBuilder.preprocess(tracking_df)
 
         # Make sure database is set up
@@ -276,7 +276,7 @@ class TaxonMappingBuilder:
             logger.info("Rebuilding taxon mappings from scratch...")
             mapping_df = pd.DataFrame(columns=["est_id", "elcode", "sname", "scomname", "taxon_id", "inat_name"])
 
-        logger.info("Filtering for taxa that don't have mappings yet...")
+        logger.debug("Filtering for taxa that don't have mappings yet...")
         match_mask = tracking_df["est_id"].isin(mapping_df["est_id"])
         to_match = tracking_df[~match_mask]
         if len(to_match) == 0:

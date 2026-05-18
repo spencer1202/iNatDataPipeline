@@ -1,6 +1,7 @@
 import os
 import logging
 import argparse
+import click
 from configparser import ConfigParser
 
 def get_yn_input(msg: str) -> bool:
@@ -19,7 +20,7 @@ def get_yn_input(msg: str) -> bool:
             print("Invalid input.")
 
 
-def parse_config(args: argparse.Namespace) -> ConfigParser:
+def parse_config(config_path: str) -> ConfigParser:
     """
     Parse config file and replace options with arguments where specified.
 
@@ -30,19 +31,13 @@ def parse_config(args: argparse.Namespace) -> ConfigParser:
     """
     try:
         config = ConfigParser()
-        config.read(args.config)
-    except:
-        print(f"Failed to load config file: {args.config}")
-        raise
-
-    if args.username:
-        config["authentication"]["username"] = args.username
-    if args.tracking:
-        config["taxon_map"]["tracking_list"] = args.tracking
-    if args.database:
-        config["DEFAULT"]["db_file"] = args.database
-
-    return config
+        config.read(config_path)
+        return config
+    
+    except Exception as err:
+        print(f"Failed to load config file: {config_path}")
+        raise click.ClickException(err)
+    
 
 
 def logging_setup(logger: logging.Logger, console_level: int, file_level: int, log_folder: str = "logs", log_file: str = "taxon_mapping.log"):
@@ -69,20 +64,15 @@ def parse_args() -> argparse.Namespace:
         prog="iNaturalistDataPipeline",
         description="Command line tool for pulling observation data from iNaturalist."
     )
-    argparser.add_argument("command",
-                           help="[taxa | download | members | export] - which stage of the pipeline you'd like to run.")
-    argparser.add_argument("-c", "--config", 
-                           help="Specify config file.",
-                           default="config.ini"
-    )
+
     argparser.add_argument("-u", "--username", 
                            help="iNaturalist username (overrides config)."
     )
-    argparser.add_argument("-t", "--tracking",
-                           help="Specify tracking list file (overrides config)."
-    )
     argparser.add_argument("-d", "--database",
                            help="Specify database file (overrides config)"
+    )
+    argparser.add_argument("-t", "--tracking",
+                           help="Specify tracking list file (overrides config)."
     )
     argparser.add_argument("-r", "--rebuild_taxa",
                            action="store_true",

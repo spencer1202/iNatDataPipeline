@@ -13,7 +13,8 @@ dependencies = [
     "dotenv",
     "pytest",
     "setuptools",
-    "prison"
+    "prison",
+    "click"
 ]
 
 [tool.setuptools.packages.find]

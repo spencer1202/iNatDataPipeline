@@ -9,11 +9,15 @@ import requests
 import prison
 import json
 import time
+import click
 
-from .db_manager import DBManager
-from .inaturalist_auth import iNaturalistAuth
+from db_manager import DBManager
+from inaturalist_auth import iNaturalistAuth
 
 logger = logging.getLogger('pipeline')
+
+
+
 
 class ObservationQuery:
 
