@@ -75,7 +75,7 @@ def _done():
     help="iNaturalist username (overrides config)"
 )
 @click.option(
-    "--database", "db_file",
+    "--database",
     envvar="OBSERVATION_DATABASE",
     default=None,
     help="Database file path (overrides config)"
