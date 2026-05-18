@@ -25,3 +25,4 @@ def test_get_inat_taxa():
     with manager as db:
         df = db.get_inat_taxa()
     print(f"\n\niNat Taxa: \n{df}")
+    df.info()

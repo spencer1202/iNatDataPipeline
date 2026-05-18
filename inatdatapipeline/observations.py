@@ -39,6 +39,7 @@ class ObservationQuery:
             self.update_days    = int(config["observations"]["update_before_days"]) # Only query for taxa that were last updated at least 
                                                                                     # this many days ago
             self.project_id     = int(config["observations"]["project_id"])         # iNaturalist project ID to check for
+            self.max_obs        = int(config["observations"]["max_observations"])   # Maximum number of observations to process for this run
         
         except TypeError:
             logger.error("Malformed observation configuration options (could not convert to integer).")
@@ -56,7 +57,7 @@ class ObservationQuery:
 
 
     @staticmethod
-    def create_date_taxon_map(taxa_df: pd.DataFrame) -> dict:
+    def create_date_taxon_map(taxa_df: pd.DataFrame) -> dict[str: set]:
         """
         Creates a map that groups taxon_ids into sets with date_updated as the key.
         """
@@ -241,6 +242,11 @@ class ObservationQuery:
         # Get iNat taxa from database
         with self.db_manager as db:
             taxa_df = db.get_inat_taxa()
+
+        # Filter for taxa queried more than days_updated before now
+        target_date = dt.date.today() - dt.timedelta(days=self.update_days)
+        date_filter = taxa_df["date_updated"].isna() | taxa_df["date_updated"] > target_date
+        taxa_df = taxa_df[date_filter]
         
         if len(taxa_df) == 0:
             logger.error("iNaturalist taxa mapping table is empty.")
@@ -253,6 +259,7 @@ class ObservationQuery:
         identifications = []
         users = []
         users_set = set()
+        complete_taxa_set = set()
 
         for date, ids in date_taxa_map.items():
             batches = ObservationQuery.get_batches(list(ids), self.batch_size)
@@ -277,7 +284,13 @@ class ObservationQuery:
                     observations.append(new_obs)
                     identifications.extend(new_ident)
                     users.extend(new_users)
-        
+                
+                # Update set of completed taxa
+                complete_taxa_set.update(batch)
+
+                if len(observations) > self.max_obs:
+                    logger.info("Exceeded maximum number of observations for this run. Wrapping up queries...")
+                    
         observations_df = pd.DataFrame(observations)
         identifications_df = pd.DataFrame(identifications)
         users_df = pd.DataFrame(users)
@@ -338,4 +351,3 @@ class ProjectMembers:
         for result in all_results:
             user_id = result.get("user", {}).get("id")
             users.add(user_id)
-            

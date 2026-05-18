@@ -41,13 +41,13 @@ file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(messa
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
-def test_get_observations():
-    manager = DBManager(db_file)
-    auth = iNaturalistAuth()
-    auth.generate_access_token(username)
+# def test_get_observations():
+#     manager = DBManager(db_file)
+#     auth = iNaturalistAuth()
+#     auth.generate_access_token(username)
 
-    querier = ObservationQuery(manager, base_config)
-    querier.get_observations(auth)
+#     querier = ObservationQuery(manager, base_config)
+#     querier.get_observations(auth)
 
 
 def test_date_taxon_map():
@@ -90,8 +90,11 @@ def test_observation_results():
     identifications_df = pd.read_csv("output/identifications.csv")
     users_df = pd.read_csv("output/users.csv")
 
-    print(f"Observations DF info:\n{observations_df.info()}\n")
-    print(f"Identifications DF info:\n{identifications_df.info()}\n")
-    print(f"Users DF info:\n{users_df.info()}\n")
+    print(f"\nObservations DF info:")
+    observations_df.info()
+    print(f"\nIdentifications DF info:")
+    identifications_df.info()
+    print(f"\nUsers DF info:")
+    users_df.info()
 
     print(f"Observations in ORBIC project: {len(observations_df[observations_df["in_project"] == True])}")

@@ -255,7 +255,9 @@ class DBManager:
         """
         Queries database for iNaturalist taxa
         """
-        return self._select_query("SELECT * FROM inat_taxa")
+        df = self._select_query("SELECT * FROM inat_taxa")
+        df["date_updated"] = pd.to_datetime(df["date_updated"])
+        return df
 
     
 
