@@ -10,7 +10,9 @@ import prison
 import json
 import time
 import click
+import numpy as np
 
+from project_members import ProjectMembers
 from db_manager import DBManager
 from inaturalist_auth import iNaturalistAuth
 
@@ -249,8 +251,8 @@ class ObservationQuery:
 
         # Filter for taxa queried more than days_updated before now
         target_date = dt.date.today() - dt.timedelta(days=self.update_days)
-        date_filter = taxa_df["date_updated"].isna() | taxa_df["date_updated"] > target_date
-        taxa_df = taxa_df[date_filter]
+        date_mask = (taxa_df["date_updated"].isna()) | (taxa_df["date_updated"] > target_date)
+        taxa_df = taxa_df[date_mask]
         
         if len(taxa_df) == 0:
             logger.error("iNaturalist taxa mapping table is empty.")
@@ -299,59 +301,15 @@ class ObservationQuery:
         identifications_df = pd.DataFrame(identifications)
         users_df = pd.DataFrame(users)
 
-        observations_df.to_csv("output/observations.csv", index=False)
-        identifications_df.to_csv("output/identifications.csv", index=False)
-        users_df.to_csv("output/users.csv", index=False)
-
-        print(f"Observations:\n{observations_df.head(50)}\n")
-        print(f"Identifications:\n{identifications_df}\n")
-        print(f"Users:\n{users_df}\n")
-
-        return observations, identifications, users
+        logger.info("Updating iNaturalist project members...")
+        members_updater = ProjectMembers(self.project_id, self.per_page)
+        members_updater.run(self.db_manager, auth)
+        
+        with self.db_manager as db:
+            db.insert_users(users)
+            db.insert_observations(observations)
+            db.insert_identifications(identifications)
+            db.update_checked_date(complete_taxa_set)
+        
         
 
-class ProjectMembers:
-    def __init__(self, config: ConfigParser):
-        self.project_id = config["observations"]["project_id"]
-        self.per_page = config["observations"]["per_page"]
-    
-
-    def fetch_project_members(self, auth: iNaturalistAuth):
-        url = f"https://api.inaturalist.org/v2/projects/{self.project_id}/members"
-        headers = auth.get_auth_headers()
-        params = {
-            "per_page": self.per_page
-        }
-
-        # Make API requests
-        all_results = []
-        page = 1
-        while True:
-            params["page"] = page
-            try:
-                response = requests.get(
-                    url=url,
-                    headers=headers,
-                    params=params,
-                    timeout=30
-                )
-                response.raise_for_status()
-                data = response.json()
-                results = data.get("results", [])
-                all_results.extend(results)
-                time.sleep(0.5)
-
-                if len(results) < self.per_page:
-                    break
-
-                page += 1
-                time.sleep(0.5)
-                
-            except requests.Timeout:
-                logger.error(f"Request for taxon {params["taxon_id"]} timed out.")
-        
-        # Extract user IDs from API response
-        users = set()
-        for result in all_results:
-            user_id = result.get("user", {}).get("id")
-            users.add(user_id)

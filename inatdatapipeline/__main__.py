@@ -6,12 +6,13 @@ import click
 
 import taxa
 import helpers
+from project_members import ProjectMembers
 from inaturalist_auth import iNaturalistAuth
 from db_manager import DBManager
 from observations import ObservationQuery
 
 logger = logging.getLogger('pipeline')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +83,7 @@ def _done():
 )
 @click.pass_context
 def main(ctx: click.Context, username: str | None, database: str | None, config_path: str | None):
-    helpers.logging_setup(logger, logging.INFO, logging.DEBUG, "logs", "pipeline.log")
+    helpers.logging_setup(logger, "logs", "pipeline.log")
 
     # Set up click CLI context
     ctx.ensure_object(dict)
@@ -90,6 +91,8 @@ def main(ctx: click.Context, username: str | None, database: str | None, config_
     ctx.obj["config"]["authentication"]["username"] = username or ctx.obj["config"]["authentication"]["username"]
 
     db_file = database or ctx.obj["config"]["DEFAULT"]["db_file"]
+    ctx.obj["config"]["DEFAULT"]["db_file"] = db_file
+
     logger.info("---------------------------------------")
     logger.info("*** iNaturalist Data Pipeline Tool  ***")
     logger.info("---------------------------------------")
@@ -114,11 +117,11 @@ def export(ctx: click.Context):
 # Download Observations
 # ---------------------------------------------------------------------------
 
-@main.command("download_observations")
+@main.command("download-observations")
 @click.pass_context
 def download_observations(ctx: click.Context):
     """
-    Download observation data to insert observations, identifications, and users into the local database.
+    Download observations, identifications, and users into local database.
     """
     config = ctx.obj["config"]
     logger.info("Downloading observations...")
@@ -136,7 +139,7 @@ def download_observations(ctx: click.Context):
 # Build Taxon Map
 # ---------------------------------------------------------------------------
 
-@main.command("build_taxon_map")
+@main.command("build-taxon-map")
 @click.option(
     "--tracking", 
     default=None,
@@ -172,6 +175,65 @@ def build_taxon_map(ctx: click.Context, tracking: str | None, rebuild: bool):
     _done()
 
 
+# ---------------------------------------------------------------------------
+# Project Members
+# ---------------------------------------------------------------------------
+
+@main.command("update-project-members")
+@click.pass_context
+def project_members(ctx: click.Context):
+    """
+    Query for project members and update database table
+    """
+    config = ctx.obj["config"]
+    per_page = config["observations"]["per_page"]
+    project_id = config["observations"]["project_id"]
+    querier = ProjectMembers(per_page, project_id)
+    db_manager = get_db(config)
+    auth = get_auth(config)
+
+    querier.run(db_manager, auth)
+
+    _done()
+
+
+# ---------------------------------------------------------------------------
+# Setup Database
+# ---------------------------------------------------------------------------
+
+@main.command("setup-database")
+@click.pass_context
+def setup_database(ctx: click.Context):
+    """
+    Set up database schema
+    """
+    config = ctx.obj["config"]
+    logger.info(f"Setting up database...")
+
+    db_manager = get_db(config)
+    with db_manager as db:
+        db.setup_db()
+    
+    _done()
+
+
+@main.command("update-experts")
+@click.option(
+    "--expert-list", "expert_list",
+    default=None,
+    help="Experts list file (overrides config value)"
+)
+@click.pass_context
+def update_experts(ctx: click.Context, expert_list: str):
+    """
+    Replace experts list
+    """
+    config = ctx.obj["config"]
+    config["experts"]["csv_file"] = expert_list
+
+    
+
 
 if __name__ == "__main__":
     main()
+

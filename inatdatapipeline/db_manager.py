@@ -81,23 +81,29 @@ class DBManager:
             """,
             """
             CREATE TABLE IF NOT EXISTS observations (
-                observation_id        int     PRIMARY KEY NOT NULL,
-                observer_id           int     NOT NULL REFERENCES users(user_id),
-                taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id),
-                license               text,
-                latitude              float,
-                longitude             float,
-                coordinate_precision  float,
-                observed_on           text,
-                created_at            text,
-                quality_grade         text,
-                url                   text,
-                description           text,
-                id_agreements         int,
-                id_disagreements      int,
-                place_guess           text,
-                captive_cultivated    boolean CHECK (captive_cultivated IN (NULL, true, false)),
-                obscured              boolean CHECK (obscured IN (NULL, true, false))
+                observation_id              int     PRIMARY KEY NOT NULL,
+                observer_id                 int     NOT NULL REFERENCES users(user_id),
+                taxon_id                    int     NOT NULL REFERENCES inat_taxa(taxon_id),
+                license                     text,
+                latitude                    float,
+                longitude                   float,
+                latitude_private            float,
+                longitude_private           float,
+                coordinate_precision        float,
+                coordinate_precision_public float,
+                observed_on                 text,
+                observed_on_string          text,
+                created_at                  text,
+                quality_grade               text,
+                url                         text,
+                description                 text,
+                id_agreements               int,
+                id_disagreements            int,
+                place_guess                 text,
+                place_guess_private         text,
+                captive_cultivated          boolean CHECK (captive_cultivated IN (NULL, true, false)),
+                obscured                    boolean CHECK (obscured IN (NULL, true, false)),
+                in_project                  boolean CHECK (in_project IN (NULL, true, false))
             );
             """,
             """
@@ -113,6 +119,11 @@ class DBManager:
                 user_id               int     NOT NULL REFERENCES users(user_id),
                 taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id),
                 created_at            text
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS project_members (
+                user_id             int      PRIMARY KEY NOT NULL
             );
             """,
             """
@@ -256,15 +267,52 @@ class DBManager:
         Queries database for iNaturalist taxa
         """
         df = self._select_query("SELECT * FROM inat_taxa")
-        df["date_updated"] = pd.to_datetime(df["date_updated"])
+        df["date_updated"] = pd.to_datetime(df["date_updated"]).dt.date
         return df
 
     
+    def insert_project_members(self, member_ids: set[int]):
+        """
+        Inserts user IDs of project members into project_members table
+        """
+        statement = """
+        INSERT OR IGNORE INTO project_members (user_id)
+        VALUES (?);
+        """
+        with self as db:
+            with closing(db._conn.cursor()) as cursor:
+                ids = [(id,) for id in member_ids]
+                cursor.executemany(statement, ids)
+        
+        return cursor.rowcount
 
 
+    def insert_users(self, users: list):
+        """
+        Inserts new users into users table
+        """
+        statement = """
+        INSERT INTO users (:id, :login, :name)
+        VALUES (?, ?, ?)
+        ON CONFLICT (user_id)
+        DO UPDATE SET 
+            login = login,
+            name = name;
+        """
+        with self as db:
+            with closing(db._conn.cursor()) as cursor:
+                cursor.executemany(statement, users)
 
 
-
+    def insert_observations(self, observations: list):
+        """
+        Inserts new observations into users table
+        """
+        statement = """
+        INSERT INTO observations (
+            
+        )
+        """
 
     # def update_tracking(self, tracking_df: pd.DataFrame):
     #     """

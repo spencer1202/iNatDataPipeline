@@ -1,6 +1,5 @@
 import os
 import logging
-import argparse
 import click
 from configparser import ConfigParser
 
@@ -40,7 +39,13 @@ def parse_config(config_path: str) -> ConfigParser:
     
 
 
-def logging_setup(logger: logging.Logger, console_level: int, file_level: int, log_folder: str = "logs", log_file: str = "taxon_mapping.log"):
+def logging_setup(
+        logger: logging.Logger, 
+        log_folder: str = "logs", 
+        log_file: str = "taxon_mapping.log",
+        console_level: int = logging.INFO, 
+        file_level: int = logging.DEBUG,
+):
     # Make sure name maps folder exists
     os.makedirs(log_folder, exist_ok=True)
 
@@ -54,30 +59,4 @@ def logging_setup(logger: logging.Logger, console_level: int, file_level: int, l
 
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
-
-
-def parse_args() -> argparse.Namespace:
-    """
-    Parse command line arguments.
-    """
-    argparser = argparse.ArgumentParser(
-        prog="iNaturalistDataPipeline",
-        description="Command line tool for pulling observation data from iNaturalist."
-    )
-
-    argparser.add_argument("-u", "--username", 
-                           help="iNaturalist username (overrides config)."
-    )
-    argparser.add_argument("-d", "--database",
-                           help="Specify database file (overrides config)"
-    )
-    argparser.add_argument("-t", "--tracking",
-                           help="Specify tracking list file (overrides config)."
-    )
-    argparser.add_argument("-r", "--rebuild_taxa",
-                           action="store_true",
-                           help="Force rebuild taxon mapping (not recommended)."
-    )
-    return argparser.parse_args()
-
 
