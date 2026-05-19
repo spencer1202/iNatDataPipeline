@@ -1,5 +1,8 @@
 from pathlib import Path
-from typing import Annotated, Optional
+import click
+import helpers
+import logging
+from typing import Annotated, Optional, TypeVar
 from pydantic import BeforeValidator, BaseModel, FilePath
 
 # ---------------------------------------------------------------------------
@@ -28,7 +31,6 @@ def check_path(v: any, required: bool, check_exists: bool, extension: str = None
         raise ValueError(f"File must use a \'{extension}\' extension.")
     
     return path_obj
-
 
 
 OptionalExistingCSV = Annotated[Optional[Path], BeforeValidator(
@@ -82,3 +84,12 @@ class Config(BaseModel):
     taxa            : TaxaConfig
     experts         : ExpertsConfig
     overrides       : OverridesConfig
+
+
+
+def get_validated_config(logger: logging.Logger, raw_config: dict) -> Config:
+    try:
+        return Config(**raw_config)
+    except Exception as ex:
+        logger.error(f"Invalid configuration settings:\n{ex}")
+        return None

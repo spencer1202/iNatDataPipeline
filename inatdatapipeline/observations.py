@@ -35,25 +35,17 @@ class ObservationQuery:
                 Reads from "observations" section to get place ID, quality grades, records per page, observation fields JSON file, and 
                 taxon batch size.
         """
-        try:
-            self.db_manager     = db_manager                            # Database manager object
-            self.place_id       = config.observations.place_id          # Place ID to filter search (e.g. Oregon = 10)
-            self.per_page       = config.observations.per_page          # Number of records to return per request
-            self.batch_size     = config.observations.batch_size        # Taxon ID batch size for querying observations
-            self.quality_grade  = config.observations.quality_grade     # iNaturalist quality grade filter(s)
-                                                                        # Comma separated (e.g. "research" or "research,casual")
-            self.fields_json    = config.observations.fields_json       # JSON file with the observation fields to query for
-            self.update_days    = config.observations.update_after_days # Only query for taxa that were last updated at least 
-                                                                        # this many days ago
-            self.project_id     = config.observations.project_id        # iNaturalist project ID to check for
-            self.max_obs        = config.observations.max_observations  # Maximum number of observations to process for this run
-        
-        except TypeError:
-            logger.error("Malformed observation configuration options (could not convert to integer).")
-            raise
-        except KeyError:
-            logger.error("Malformed observation configuration options (missing section or field).")
-            raise
+        self.db_manager     = db_manager                            # Database manager object
+        self.place_id       = config.observations.place_id          # Place ID to filter search (e.g. Oregon = 10)
+        self.per_page       = config.observations.per_page          # Number of records to return per request
+        self.batch_size     = config.observations.batch_size        # Taxon ID batch size for querying observations
+        self.quality_grade  = config.observations.quality_grade     # iNaturalist quality grade filter(s)
+                                                                    # Comma separated (e.g. "research" or "research,casual")
+        self.fields_json    = config.observations.fields_json       # JSON file with the observation fields to query for
+        self.update_days    = config.observations.update_after_days # Only query for taxa that were last updated at least 
+                                                                    # this many days ago
+        self.project_id     = config.observations.project_id        # iNaturalist project ID to check for
+        self.max_obs        = config.observations.max_observations  # Maximum number of observations to process for this run
 
 
     @staticmethod
@@ -67,6 +59,11 @@ class ObservationQuery:
     def create_date_taxon_map(taxa_df: pd.DataFrame) -> dict[str: set]:
         """
         Creates a map that groups taxon_ids into sets with date_updated as the key.
+        Args:
+            taxa_df: 
+                Taxa dataframe to create a date map from
+        Returns:
+            Dictionary that maps a date string to a set of taxon IDs.
         """
         date_taxon_map = taxa_df.groupby("date_updated")["taxon_id"].apply(set).to_dict()
         date_taxon_map["None"] = set(taxa_df[taxa_df["date_updated"].isna()]["taxon_id"])
@@ -75,6 +72,18 @@ class ObservationQuery:
 
     @staticmethod
     def download_observations(ids: list, params: dict, headers: str) -> list:
+        """
+        Download iNaturalist observations for a list of ID.
+        Args:
+            ids:
+                List of taxon IDs to download observations for.
+            params:
+                Base HTTP request parameters.
+            headers:
+                HTTP authentication headers.
+        Returns:
+            A list of result dictionaries, decoded from the HTTP response.
+        """
         observations = []
         params["taxon_id"] = ",".join(str(id) for id in ids)
         url = "https://api.inaturalist.org/v2/observations"
@@ -102,14 +111,14 @@ class ObservationQuery:
                 
             except requests.Timeout:
                 logger.error(f"Request for taxon {params["taxon_id"]} timed out.")
-            except:
-                logger.error(f"Unknown error occurred while dowloading observations.")
+            except Exception as err:
+                logger.error(f"Unknown error occurred while dowloading observations: {err}")
 
-        logger.debug(f"\tFinished downloading {len(observations)} results.")
+        logger.debug(f"  Finished downloading {len(observations)} results.")
         return observations
 
 
-    def add_records_from_result(self, result: list, user_set: set):
+    def add_records_from_result(self, result: list, user_set: set) -> tuple[dict, list[dict], list[dict]]:
         """
         Takes the JSON response dictionary for one observation and extracts the observation information and
         a list of its identifications and associated users.
@@ -120,9 +129,7 @@ class ObservationQuery:
             user_set:
                 Set of user IDs that have already been encountered.
         Returns:
-            observations:
-            identifications:
-            users:
+            A tuple with one observation, a list of identifications, and a list of new users.
             
         """
         identifications = []
@@ -169,8 +176,6 @@ class ObservationQuery:
             user_set
         )
         new_users.extend(ident_users)
-
-        #logger.debug(f"  [ Observation {observation["observation_id"]:>10} ]  Identifications: {len(identifications):<2}  New users: {len(new_users)}")
 
         return observation, identifications, new_users
 
@@ -221,7 +226,7 @@ class ObservationQuery:
 
     def get_observations(self, auth: iNaturalistAuth):
         """
-        Downloads observations from iNaturalist using the iNaturalist taxon IDs in the local database.
+        Downloads observations from iNaturalist using the taxon IDs in the local database.
         """
         # Set up authentication
         if not auth.get_access_token():
@@ -248,8 +253,11 @@ class ObservationQuery:
             return
 
         # Get iNat taxa from database
-        with self.db_manager as db:
-            taxa_df = db.get_inat_taxa()
+        try:
+            with self.db_manager as db:
+                taxa_df = db.get_inat_taxa()
+        except Exception as err:
+            logger.error(f"Failed to get iNaturalist taxa from database: {err}")
 
         # If days_updated is zero, update all taxa without a date filter.
         if not self.update_days:
@@ -262,12 +270,13 @@ class ObservationQuery:
             taxa_df = taxa_df[date_mask]
         
         if len(taxa_df) == 0:
-            logger.warning("No taxa left after filtering.")
+            logger.warning("No taxa left to search for.")
             return
         logger.info(f"Downloading observations for {len(taxa_df)} taxa.")
 
         date_taxa_map = ObservationQuery.create_date_taxon_map(taxa_df)
 
+        # Iterate through IDs and run requests
         observations = []
         identifications = []
         users = []
@@ -279,14 +288,13 @@ class ObservationQuery:
             batches = ObservationQuery.get_batches(list(ids), self.batch_size)
             logger.debug("")
             if date != "None":
-                logger.debug(f"*** Processing taxa with 'created after' date filter: {date} ***")
+                logger.debug(f"Processing taxa with 'created after' date filter: {date}")
                 base_params['created_d1'] = date
             else:
-                logger.debug("*** Processing taxa with no 'created after' date filter ***")
+                logger.debug("Processing taxa with no 'created after' date filter")
             
             for i, batch in enumerate(batches, start=1):
-                logger.debug("")
-                logger.debug(f"Processing batch #{i} with {len(batch)} taxa...")
+                logger.debug(f"* Processing batch #{i} with {len(batch)} taxa...")
                 # Get list of JSON response dictionaries
                 results = ObservationQuery.download_observations(batch, base_params, headers)
                 # Add observations, identification, and users from results
@@ -309,15 +317,21 @@ class ObservationQuery:
 
             if max_reached:
                 break
+
         logger.info("Finished downloading!")
         logger.info("")
 
-        with self.db_manager as db:
-            user_count = db.insert_users(users)
-            obs_count = db.insert_observations(observations)
-            ident_count = db.insert_identifications(identifications)
-            db.update_checked_date(complete_taxa_set)
+        # Update database
+        try:
+            with self.db_manager as db:
+                user_count = db.insert_users(users)
+                obs_count = db.insert_observations(observations)
+                ident_count = db.insert_identifications(identifications)
+                db.update_checked_date(complete_taxa_set)
+        except Exception as err:
+            logger.error(f"Failed to insert into database: {err}\n")
         
+        # Report results
         logger.info("Inserted new records into database:")
         logger.info(f"Users:            {user_count}")
         logger.info(f"Observations:     {obs_count}")

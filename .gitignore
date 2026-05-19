@@ -16,3 +16,4 @@ tests/__pycache__
 ## Build ###
 dist
 inatdatapipeline.egg-info
+build

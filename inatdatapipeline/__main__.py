@@ -66,9 +66,9 @@ def parse_config(config_path: str) -> ConfigParser:
         ConfigParser object loaded with config options
     """
     try:
-        config = ConfigParser()
-        config.read(config_path)
-        return config
+        cf = ConfigParser()
+        cf.read(config_path)
+        return cf
     
     except Exception as err:
         print(f"Failed to load config file: {config_path}")
@@ -88,7 +88,7 @@ def _done():
 @click.group(help="CLI tool to manage iNaturalist data import pipeline")
 @click.option(
     "--config", "config_path",
-    type=click.Path,
+    type=click.Path(exists=True),
     default="config.ini",
     envvar="INAT_CONFIG",
     help="Path to config file."
@@ -101,7 +101,7 @@ def _done():
 )
 @click.option(
     "--db",
-    type=click.Path,
+    type=click.Path(exists=False),
     envvar="OBSERVATION_DATABASE",
     default=None,
     help="Database file path (overrides config)"
@@ -112,14 +112,14 @@ def main(ctx: click.Context, username: str | None, db: str | None, config_path: 
 
     # Read config file
     try:
-        config = ConfigParser()
-        config.read(config_path)
+        cf = ConfigParser()
+        cf.read(config_path)
     except Exception as err:
         print(f"Failed to load config file: {config_path}")
         raise click.ClickException(err)
     
     # Set up click CLI context
-    raw_config = {section: dict(config[section]) for section in config.sections()}
+    raw_config = {section: dict(cf[section]) for section in cf.sections()}
     raw_config.setdefault("core", {})
     raw_config.setdefault("observations", {})
     raw_config.setdefault("taxa", {})
@@ -137,12 +137,6 @@ def main(ctx: click.Context, username: str | None, db: str | None, config_path: 
     logger.info(f"File database: {raw_config["core"]["db_file"]}")
     logger.info("")
 
-
-def get_validated_config(raw_config: dict) -> config.Config:
-    try:
-        return config.Config(**raw_config)
-    except Exception as ex:
-        raise click.ClickException(f"Invalid configuration settings:\n{ex}")
     
 
 # ---------------------------------------------------------------------------
@@ -183,15 +177,21 @@ def build_taxon_map(ctx: click.Context, tracking: str | None, rebuild: bool = Fa
     # Fill in and valiate config
     if tracking is not None:
         ctx.obj["taxa"]["tracking_list"] = tracking
-    config = get_validated_config(ctx.obj)
-    
-    db_manager = get_db(config.core.db_file)
-    auth = get_auth(config.core.user_agent, config.core.username)
+    cf = config.get_validated_config(logger, ctx.obj)
+    if not cf:
+        return
+
+    db_manager = get_db(cf.core.db_file)
+    auth = get_auth(cf.core.user_agent, cf.core.username)
     taxon_mapper = taxa.TaxonMappingBuilder(db_manager)
 
+    # Make sure database is set up
+    with db_manager as db:
+        db.setup_db()
+
     taxon_mapper.build_mapping(
-        config.taxa.tracking_list,
-        config.taxa.name_overrides_file,
+        cf.taxa.tracking_list,
+        cf.taxa.name_overrides_file,
         auth,
         rebuild
     )
@@ -218,13 +218,20 @@ def download_observations(ctx: click.Context, days_since_update: Optional[int] =
     
     # Fill in and valiate config
     if days_since_update is not None:
-        ctx.obj["observations"]["update_before_days"] = days_since_update
-    config = get_validated_config(ctx.obj)
+        # print(f"days_since_update = {days_since_update}")
+        ctx.obj["observations"]["update_after_days"] = days_since_update
+    cf = config.get_validated_config(logger, ctx.obj)
+    if not cf:
+        return
     
-    db_manager = get_db(config.core.db_file)
-    auth = get_auth(config.core.user_agent, config.core.username)
+    db_manager = get_db(cf.core.db_file)
+    auth = get_auth(cf.core.user_agent, cf.core.username)
     
-    observation_querier = ObservationQuery(db_manager, config)
+    # Make sure database is set up
+    with db_manager as db:
+        db.setup_db()
+
+    observation_querier = ObservationQuery(db_manager, cf)
     observation_querier.get_observations(auth)
 
     _done()
@@ -240,14 +247,20 @@ def project_members(ctx: click.Context):
     """
     Query for project members and update database table
     """
-    config = get_validated_config(ctx.obj)
+    cf = config.get_validated_config(logger, ctx.obj)
+    if not cf:
+        return
+    
+    logger.info(f"Updating current members in project: {cf.observations.project_id}")
 
-    logger.info(f"Updating current members in project: {config.observations.project_id}")
-
-    querier = ProjectMembers(config.observations.per_page, config.observations.project_id)
-    db_manager = get_db(config.core.db_file)
-    auth = get_auth(config.core.user_agent, config.core.username)
-
+    querier = ProjectMembers(cf.observations.project_id, cf.observations.per_page)
+    db_manager = get_db(cf.core.db_file)
+    auth = get_auth(cf.core.user_agent, cf.core.username)
+    
+    # Make sure database is set up
+    with db_manager as db:
+        db.setup_db()
+    
     querier.run(db_manager, auth)
 
     _done()
@@ -265,9 +278,11 @@ def setup_database(ctx: click.Context):
     """
     logger.info(f"Setting up database...")
 
-    config = get_validated_config(ctx.obj)
-
-    db_manager = get_db(config.core.db_file)
+    cf = config.get_validated_config(logger, ctx.obj)
+    if not cf:
+        return
+    
+    db_manager = get_db(cf.core.db_file)
     with db_manager as db:
         db.setup_db()
     
@@ -288,9 +303,11 @@ def update_experts(ctx: click.Context, expert_list: Optional[str]):
     
     if expert_list:
         ctx.obj["experts"]["csv_file"] = expert_list
-    config = get_validated_config(ctx.obj)
-
-    db_manager = get_db(config.core.db_file)
+    cf = config.get_validated_config(logger, ctx.obj)
+    if not cf:
+        return
+    
+    db_manager = get_db(cf.core.db_file)
 
 
 

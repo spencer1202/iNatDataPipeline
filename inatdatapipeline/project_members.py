@@ -21,8 +21,14 @@ class ProjectMembers:
         Query project members and insert them into the database.
         """
         member_ids = self.fetch_project_members(auth)
-        with db_manager as db:
-            rows_inserted = db_manager.insert_project_members(member_ids)
+        logger.debug(f"Found {len(member_ids)} project members.")
+
+        try:
+            with db_manager as db:
+                rows_inserted = db_manager.replace_project_members(member_ids)
+        except Exception as err:
+            logger.error(f"Failed to insert project members into the database.")
+
         logger.info(f"Inserted {rows_inserted} new member IDs.")
 
 

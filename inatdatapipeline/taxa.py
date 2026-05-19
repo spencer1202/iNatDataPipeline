@@ -137,7 +137,7 @@ class TaxonMappingBuilder:
     @staticmethod
     def preprocess(df: pd.DataFrame):
         """
-        Fills the sname_clean column with clean versions of each taxon name.
+        Fills the sname_clean column with preprocessed versions of each taxon name.
         """
         df["sname_clean"] = np.where(
             df["sname_clean"].isna(),
@@ -269,28 +269,42 @@ class TaxonMappingBuilder:
         # Create mapping dataframe, either with prior entries or from scratch
         if not force_rebuild:
             logger.info("Loading existing mappings...")
-            with self.db_manager as db:
-                mapping_df = db.get_mappings()
+            try:
+                with self.db_manager as db:
+                    mapping_df = db.get_mappings()
+            except err:
+                logger.error(f"Failed to load mappings: {err}")
+                return
+            
             logger.debug(f"* Retrieved {len(mapping_df)} taxon mappings from database.")
+
         else:
             logger.info("Rebuilding taxon mappings from scratch...")
             mapping_df = pd.DataFrame(columns=["est_id", "elcode", "sname", "scomname", "taxon_id", "inat_name"])
 
         logger.debug("Filtering for taxa that don't have mappings yet...")
+
         match_mask = tracking_df["est_id"].isin(mapping_df["est_id"])
         to_match = tracking_df[~match_mask]
+
         if len(to_match) == 0:
             logger.warning("* All taxa on tracking list are already present in mappings.")
-        else:
-            logger.debug(f"* Found {len(to_match)} tracking list entries not present in existing mappings.")
-            to_match = TaxonMappingBuilder.get_undescribed_names(to_match)
-            logger.debug(f"Undescribed taxa: {len(to_match[~to_match["exact_match"]])}")
-            
-            logger.info("")
-            logger.info("Beginning taxon queries...")
-            new_mappings = TaxonMappingBuilder.get_new_mappings(to_match, auth)
+            return
+        
+        logger.debug(f"* Found {len(to_match)} tracking list entries not present in existing mappings.")
+        to_match = TaxonMappingBuilder.get_undescribed_names(to_match)
+        logger.debug(f"Undescribed taxa: {len(to_match[~to_match["exact_match"]])}")
+        
+        # Generate new mappings
+        logger.info("")
+        logger.info("Beginning taxon queries...")
+        new_mappings = TaxonMappingBuilder.get_new_mappings(to_match, auth)
 
+        # Insert mappings into database
+        try:
             with self.db_manager as db:
                 db.insert_mappings(new_mappings)
+        except err:
+            logger.error(f"Failed to insert mappings into database: {err}")
         
   

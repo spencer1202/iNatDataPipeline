@@ -124,11 +124,6 @@ class DBManager:
             );
             """,
             """
-            CREATE TABLE IF NOT EXISTS project_members (
-                user_id             int      PRIMARY KEY NOT NULL
-            );
-            """,
-            """
             CREATE VIEW IF NOT EXISTS mapping (
                 est_id, 
                 elcode, 
@@ -174,15 +169,12 @@ class DBManager:
             print("Error while creating database tables.")
             raise
         
-        self.commit()
-
 
     def commit(self):
         """
         Commits database transaction
         """
-        if not self._conn:
-            raise ValueError("Must be connected to a database")
+        self.check_connection()
     
         self._conn.commit()
     
@@ -195,6 +187,7 @@ class DBManager:
             self._conn.close()
             self._conn = None
     
+
     def check_connection(self):
         if not self._conn:
             raise ValueError("Must be connected to a database")
@@ -273,21 +266,34 @@ class DBManager:
         return df
 
     
-    def insert_project_members(self, member_ids: set[int]):
+    def replace_project_members(self, member_ids: set[int]):
         """
-        Inserts user IDs of project members into project_members table
+        Replace project_members table with new entries
         """
-        statement = """
-        INSERT OR IGNORE INTO project_members (user_id)
-        VALUES (?);
-        """
+        statements = [
+            """
+            DROP TABLE IF EXISTS project_members;
+            """,
+            """
+            CREATE TABLE project_members (
+                user_id int PRIMARY KEY NOT NULL
+            );
+            """,
+            """
+            INSERT OR IGNORE INTO project_members (user_id)
+            VALUES (?);
+            """
+        ]
         self.check_connection()
 
         with closing(self._conn.cursor()) as cursor:
             ids = [(id,) for id in member_ids]
-            cursor.executemany(statement, ids)
+            cursor.execute(statements[0])
+            cursor.execute(statements[1])
+            cursor.executemany(statements[2], ids)
+            count = cursor.rowcount
         
-        return cursor.rowcount
+        return count
 
 
     def insert_users(self, users: list):
@@ -449,120 +455,3 @@ class DBManager:
         
         with closing(self._conn.cursor()) as cursor:
             cursor.execute(statement, [dt.date.today()] + list(complete_taxa))
-
-    # def update_tracking(self, tracking_df: pd.DataFrame):
-    #     """
-    #     Updates database tracking list with the records in tracking_df. 
-    #     Tracking dataframe must have columns [est_id, elcode, sname, scomname]
-    #     """
-        
-    #     statement = """
-    #         INSERT INTO tracking_taxa (est_id, elcode, sname, scomname)
-    #         SELECT 
-    #             temp.est_id, 
-    #             temp.elcode, 
-    #             temp.sname, 
-    #             temp.scomname
-    #         FROM temp_tracking AS temp
-    #         WHERE temp.est_id = temp.est_id
-    #         ON CONFLICT (est_id)
-    #         DO UPDATE SET 
-    #             elcode = excluded.elcode,
-    #             sname = excluded.sname,
-    #             scomname = excluded.scomname
-            
-    #         """
-    #     self.check_connection()
-
-    #     cols = ["est_id", "elcode", "sname", "scomname"]
-    #     tracking_df[cols].to_sql("temp_tracking", self._conn, if_exists="replace")
-    #     with closing(self._conn.cursor()) as cursor:
-    #         cursor.execute(statement)
-    #         cursor.execute("DROP TABLE IF EXISTS temp_tracking")
-
-    #     self.commit()
-
-
-    # def insert_overrides(self, overrides_df: pd.DataFrame):
-    #     """
-    #     Insert name overrides into database
-
-    #     Returns:
-    #         Number of records updated
-    #     """
-    #     statement = """
-    #     UPDATE tracking_taxa
-    #     SET clean_name = temp.inat_name
-    #     FROM temp_overrides AS temp
-    #     WHERE temp.est_id = tracking_taxa.est_id
-    #     """
-    #     self.check_connection()
-
-    #     overrides_df.to_sql("temp_overrides", self._conn, if_exists="replace")
-    #     with closing(self._conn.cursor()) as cursor:
-    #         cursor.execute(statement)
-    #         count = cursor.rowcount
-    #         cursor.execute("DROP TABLE IF EXISTS temp_overrides")
-
-    #     self.commit()
-    #     return count
-
-
-
-"""
-        INSERT INTO observations (
-            observation_id,
-            observer_id
-            observation_id             
-            observer_id,
-            taxon_id,
-            license,
-            latitude,
-            longitude,
-            latitude_private,
-            longitude_private,
-            coordinate_precision,
-            coordinate_precision_public,
-            observed_on,
-            observed_on_string,
-            created_at,
-            quality_grade,
-            url,
-            description,
-            id_agreements,
-            id_disagreements,
-            place_guess,
-            place_guess_private,
-            captive_cultivated,
-            obscured,
-            in_project
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (observation_id)
-        DO UPDATE SET 
-            observation_id,
-            observer_id
-            observation_id             
-            observer_id,
-            taxon_id,
-            license,
-            latitude,
-            longitude,
-            latitude_private,
-            longitude_private,
-            coordinate_precision,
-            coordinate_precision_public,
-            observed_on,
-            observed_on_string,
-            created_at,
-            quality_grade,
-            url,
-            description,
-            id_agreements,
-            id_disagreements,
-            place_guess,
-            place_guess_private,
-            captive_cultivated,
-            obscured,
-            in_project
-        """
