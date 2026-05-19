@@ -1,6 +1,7 @@
 import sqlite3
 import pandas as pd
 from contextlib import closing
+import datetime as dt
 
 class DBManager:
     def __init__(self, db_file: str):
@@ -94,6 +95,7 @@ class DBManager:
                 observed_on                 text,
                 observed_on_string          text,
                 created_at                  text,
+                updated_at                  text,
                 quality_grade               text,
                 url                         text,
                 description                 text,
@@ -267,7 +269,7 @@ class DBManager:
         Queries database for iNaturalist taxa
         """
         df = self._select_query("SELECT * FROM inat_taxa")
-        df["date_updated"] = pd.to_datetime(df["date_updated"]).dt.date
+        df["date_updated"] = pd.to_datetime(df["date_updated"])
         return df
 
     
@@ -279,10 +281,11 @@ class DBManager:
         INSERT OR IGNORE INTO project_members (user_id)
         VALUES (?);
         """
-        with self as db:
-            with closing(db._conn.cursor()) as cursor:
-                ids = [(id,) for id in member_ids]
-                cursor.executemany(statement, ids)
+        self.check_connection()
+
+        with closing(self._conn.cursor()) as cursor:
+            ids = [(id,) for id in member_ids]
+            cursor.executemany(statement, ids)
         
         return cursor.rowcount
 
@@ -292,27 +295,160 @@ class DBManager:
         Inserts new users into users table
         """
         statement = """
-        INSERT INTO users (:id, :login, :name)
-        VALUES (?, ?, ?)
+        INSERT INTO users (user_id, login, name)
+        VALUES (:id, :login, :name)
         ON CONFLICT (user_id)
         DO UPDATE SET 
             login = login,
             name = name;
         """
-        with self as db:
-            with closing(db._conn.cursor()) as cursor:
-                cursor.executemany(statement, users)
+        self.check_connection()
+
+        with closing(self._conn.cursor()) as cursor:
+            cursor.executemany(statement, users)
+            count = cursor.rowcount
+        return count
 
 
-    def insert_observations(self, observations: list):
+    def insert_observations(self, observations: list[dict]) -> int:
         """
         Inserts new observations into users table
         """
         statement = """
         INSERT INTO observations (
-            
+            observation_id,
+            observer_id,
+            taxon_id,
+            license,
+            latitude,
+            longitude,
+            latitude_private,
+            longitude_private,
+            coordinate_precision,
+            coordinate_precision_public,
+            observed_on,
+            observed_on_string,
+            created_at,
+            updated_at,
+            quality_grade,
+            url,
+            description,
+            id_agreements,
+            id_disagreements,
+            place_guess,
+            place_guess_private,
+            captive_cultivated,
+            obscured,
+            in_project
         )
+        VALUES (
+            :observation_id,
+            :observer_id,
+            :taxon_id,
+            :license,
+            :latitude,
+            :longitude,
+            :latitude_private,
+            :longitude_private,
+            :coordinate_precision,
+            :coordinate_precision_public,
+            :observed_on,
+            :observed_on_string,
+            :created_at,
+            :updated_at,
+            :quality_grade,
+            :url,
+            :description,
+            :id_agreements,
+            :id_disagreements,
+            :place_guess,
+            :place_guess_private,
+            :captive_cultivated,
+            :obscured,
+            :in_project
+        )
+        ON CONFLICT (observation_id)
+        DO UPDATE SET
+            observer_id = excluded.observer_id,
+            taxon_id = excluded.taxon_id,
+            license = excluded.license,
+            latitude = excluded.latitude,
+            longitude = excluded.longitude,
+            latitude_private = excluded.latitude_private,
+            longitude_private = excluded.longitude_private,
+            coordinate_precision = excluded.coordinate_precision,
+            coordinate_precision_public = excluded.coordinate_precision_public,
+            observed_on = excluded.observed_on,
+            observed_on_string = excluded.observed_on_string,
+            created_at = excluded.created_at,
+            updated_at = excluded.updated_at,
+            quality_grade = excluded.quality_grade,
+            url = excluded.url,
+            description = excluded.description,
+            id_agreements = excluded.id_agreements,
+            id_disagreements = excluded.id_disagreements,
+            place_guess = excluded.place_guess,
+            place_guess_private = excluded.place_guess_private,
+            captive_cultivated = excluded.captive_cultivated,
+            obscured = excluded.obscured,
+            in_project = excluded.in_project
         """
+        self.check_connection()
+
+        # count = df.to_sql("temp_observations", self._conn, if_exists="replace")
+        with closing(self._conn.cursor()) as cursor:
+            cursor.executemany(statement, observations)
+            count = cursor.rowcount
+
+        return count
+
+
+    def insert_identifications(self, identifications: list[dict]):
+        statement = """
+        INSERT INTO identifications (
+            identification_id,
+            observation_id,
+            user_id,
+            taxon_id,
+            created_at
+        )
+        VALUES ( 
+            :identification_id,
+            :observation_id,
+            :user_id,
+            :taxon_id,
+            :created_at
+        )
+        ON CONFLICT (identification_id)
+        DO UPDATE SET
+            identification_id = excluded.identification_id,
+            observation_id = excluded.observation_id,
+            user_id = excluded.user_id,
+            taxon_id = excluded.taxon_id,
+            created_at = excluded.created_at
+        """
+        self.check_connection()
+
+        # count = identifications_df.to_sql("temp_identifications", self._conn, if_exists="replace")
+        with closing(self._conn.cursor()) as cursor:
+            cursor.executemany(statement, identifications)
+            count = cursor.rowcount
+            # cursor.execute("DROP TABLE IF EXISTS temp_identifications")
+        
+        return count
+    
+
+    def update_checked_date(self, complete_taxa: set):
+        placeholders = ', '.join(['?'] * len(complete_taxa))
+        statement = f"""
+        UPDATE inat_taxa
+        SET date_updated = ?
+        WHERE taxon_id IN ({placeholders})
+        """
+        self.check_connection()
+        
+        with closing(self._conn.cursor()) as cursor:
+            cursor.execute(statement, [dt.date.today()] + list(complete_taxa))
 
     # def update_tracking(self, tracking_df: pd.DataFrame):
     #     """
@@ -370,3 +506,63 @@ class DBManager:
 
     #     self.commit()
     #     return count
+
+
+
+"""
+        INSERT INTO observations (
+            observation_id,
+            observer_id
+            observation_id             
+            observer_id,
+            taxon_id,
+            license,
+            latitude,
+            longitude,
+            latitude_private,
+            longitude_private,
+            coordinate_precision,
+            coordinate_precision_public,
+            observed_on,
+            observed_on_string,
+            created_at,
+            quality_grade,
+            url,
+            description,
+            id_agreements,
+            id_disagreements,
+            place_guess,
+            place_guess_private,
+            captive_cultivated,
+            obscured,
+            in_project
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (observation_id)
+        DO UPDATE SET 
+            observation_id,
+            observer_id
+            observation_id             
+            observer_id,
+            taxon_id,
+            license,
+            latitude,
+            longitude,
+            latitude_private,
+            longitude_private,
+            coordinate_precision,
+            coordinate_precision_public,
+            observed_on,
+            observed_on_string,
+            created_at,
+            quality_grade,
+            url,
+            description,
+            id_agreements,
+            id_disagreements,
+            place_guess,
+            place_guess_private,
+            captive_cultivated,
+            obscured,
+            in_project
+        """

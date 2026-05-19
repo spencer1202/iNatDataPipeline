@@ -12,6 +12,7 @@ import time
 import click
 import numpy as np
 
+import config
 from project_members import ProjectMembers
 from db_manager import DBManager
 from inaturalist_auth import iNaturalistAuth
@@ -23,7 +24,7 @@ logger = logging.getLogger('pipeline')
 
 class ObservationQuery:
 
-    def __init__(self, db_manager: DBManager, config: ConfigParser):
+    def __init__(self, db_manager: DBManager, config: config.Config):
         """
         Create object for pulling observations from iNaturalist API.
         Args:
@@ -35,17 +36,17 @@ class ObservationQuery:
                 taxon batch size.
         """
         try:
-            self.db_manager     = db_manager                                        # Database manager object
-            self.place_id       = int(config["observations"]["place_id"])           # Place ID to filter search (e.g. Oregon = 10)
-            self.per_page       = int(config["observations"]["per_page"])           # Number of records to return per request
-            self.batch_size     = int(config["observations"]["batch_size"])         # Taxon ID batch size for querying observations
-            self.quality_grade  = config["observations"]["quality_grade"]           # iNaturalist quality grade filter(s)
-                                                                                    # Comma separated (e.g. "research" or "research,casual")
-            self.fields_json    = config["observations"]["fields_json"]             # JSON file with the observation fields to query for
-            self.update_days    = int(config["observations"]["update_before_days"]) # Only query for taxa that were last updated at least 
-                                                                                    # this many days ago
-            self.project_id     = int(config["observations"]["project_id"])         # iNaturalist project ID to check for
-            self.max_obs        = int(config["observations"]["max_observations"])   # Maximum number of observations to process for this run
+            self.db_manager     = db_manager                            # Database manager object
+            self.place_id       = config.observations.place_id          # Place ID to filter search (e.g. Oregon = 10)
+            self.per_page       = config.observations.per_page          # Number of records to return per request
+            self.batch_size     = config.observations.batch_size        # Taxon ID batch size for querying observations
+            self.quality_grade  = config.observations.quality_grade     # iNaturalist quality grade filter(s)
+                                                                        # Comma separated (e.g. "research" or "research,casual")
+            self.fields_json    = config.observations.fields_json       # JSON file with the observation fields to query for
+            self.update_days    = config.observations.update_after_days # Only query for taxa that were last updated at least 
+                                                                        # this many days ago
+            self.project_id     = config.observations.project_id        # iNaturalist project ID to check for
+            self.max_obs        = config.observations.max_observations  # Maximum number of observations to process for this run
         
         except TypeError:
             logger.error("Malformed observation configuration options (could not convert to integer).")
@@ -131,8 +132,8 @@ class ObservationQuery:
             "observer_id"                   : result.get("user", {}).get("id"),
             "taxon_id"                      : result.get("community_taxon_id"),
             "license"                       : result.get("license_code"),
-            "latitude_public"               : result.get("geojson", {}).get("coordinates", [None, None])[0],
-            "longitude_public"              : result.get("geojson", {}).get("coordinates", [None, None])[1],
+            "latitude"                      : result.get("geojson", {}).get("coordinates", [None, None])[0],
+            "longitude"                     : result.get("geojson", {}).get("coordinates", [None, None])[1],
             "latitude_private"              : result.get("private_geojson", {}).get("coordinates", [None, None])[0],
             "longitude_private"             : result.get("private_geojson", {}).get("coordinates", [None, None])[1],
             "coordinate_precision"          : result.get("positional_accuracy"),
@@ -140,13 +141,14 @@ class ObservationQuery:
             "observed_on"                   : result.get("observed_on"),
             "observed_on_string"            : result.get("observed_on_string"),
             "created_at"                    : result.get("created_at"),
+            "updated_at"                    : result.get("updated_at"),
             "quality_grade"                 : result.get("quality_grade"),
             "url"                           : result.get("uri"),
             "description"                   : result.get("description"),
             "id_agreements"                 : result.get("num_identification_agreements"),
             "id_disagreements"              : result.get("num_identification_disagreements"),
             "captive_cultivated"            : result.get("captive"),
-            "place_guess_public"            : result.get("place_guess"),
+            "place_guess"                   : result.get("place_guess"),
             "place_guess_private"           : result.get("place_guess_private"),
             "obscured"                      : result.get("obscured"),
             "in_project"                    : True if self.project_id in result.get("project_ids", []) else False
@@ -168,7 +170,7 @@ class ObservationQuery:
         )
         new_users.extend(ident_users)
 
-        logger.debug(f"  [ Observation {observation["observation_id"]:>10} ]  Identifications: {len(identifications):<2}  New users: {len(new_users)}")
+        #logger.debug(f"  [ Observation {observation["observation_id"]:>10} ]  Identifications: {len(identifications):<2}  New users: {len(new_users)}")
 
         return observation, identifications, new_users
 
@@ -249,15 +251,20 @@ class ObservationQuery:
         with self.db_manager as db:
             taxa_df = db.get_inat_taxa()
 
+        # If days_updated is zero, update all taxa without a date filter.
+        if not self.update_days:
+            taxa_df["date_updated"] = None
+
         # Filter for taxa queried more than days_updated before now
-        target_date = dt.date.today() - dt.timedelta(days=self.update_days)
-        date_mask = (taxa_df["date_updated"].isna()) | (taxa_df["date_updated"] > target_date)
-        taxa_df = taxa_df[date_mask]
+        else:
+            target_date = dt.date.today() - dt.timedelta(days=self.update_days)
+            date_mask = (taxa_df["date_updated"].isna()) | (taxa_df["date_updated"] <= pd.Timestamp(target_date))
+            taxa_df = taxa_df[date_mask]
         
         if len(taxa_df) == 0:
-            logger.error("iNaturalist taxa mapping table is empty.")
+            logger.warning("No taxa left after filtering.")
             return
-        logger.info(f"Querying observations for {len(taxa_df)} taxa.")
+        logger.info(f"Downloading observations for {len(taxa_df)} taxa.")
 
         date_taxa_map = ObservationQuery.create_date_taxon_map(taxa_df)
 
@@ -266,6 +273,7 @@ class ObservationQuery:
         users = []
         users_set = set()
         complete_taxa_set = set()
+        max_reached = False
 
         for date, ids in date_taxa_map.items():
             batches = ObservationQuery.get_batches(list(ids), self.batch_size)
@@ -296,20 +304,23 @@ class ObservationQuery:
 
                 if len(observations) > self.max_obs:
                     logger.info("Exceeded maximum number of observations for this run. Wrapping up queries...")
-                    
-        observations_df = pd.DataFrame(observations)
-        identifications_df = pd.DataFrame(identifications)
-        users_df = pd.DataFrame(users)
+                    max_reached = True
+                    break
 
-        logger.info("Updating iNaturalist project members...")
-        members_updater = ProjectMembers(self.project_id, self.per_page)
-        members_updater.run(self.db_manager, auth)
-        
+            if max_reached:
+                break
+        logger.info("Finished downloading!")
+        logger.info("")
+
         with self.db_manager as db:
-            db.insert_users(users)
-            db.insert_observations(observations)
-            db.insert_identifications(identifications)
+            user_count = db.insert_users(users)
+            obs_count = db.insert_observations(observations)
+            ident_count = db.insert_identifications(identifications)
             db.update_checked_date(complete_taxa_set)
         
+        logger.info("Inserted new records into database:")
+        logger.info(f"Users:            {user_count}")
+        logger.info(f"Observations:     {obs_count}")
+        logger.info(f"Identifications:  {ident_count}")
         
 

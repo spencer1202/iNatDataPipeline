@@ -21,7 +21,8 @@ class ProjectMembers:
         Query project members and insert them into the database.
         """
         member_ids = self.fetch_project_members(auth)
-        rows_inserted = db_manager.insert_project_members(member_ids)
+        with db_manager as db:
+            rows_inserted = db_manager.insert_project_members(member_ids)
         logger.info(f"Inserted {rows_inserted} new member IDs.")
 
 

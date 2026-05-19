@@ -3,6 +3,14 @@ import logging
 import click
 from configparser import ConfigParser
 
+def error(logger: logging.Logger, msg: str):
+    """
+    Log error and raise click exception using message
+    """
+    logger.error(msg)
+    raise click.ClickException(msg)
+
+
 def get_yn_input(msg: str) -> bool:
     """
     Asks the user a yes/no question, validates input, returns result
@@ -19,24 +27,8 @@ def get_yn_input(msg: str) -> bool:
             print("Invalid input.")
 
 
-def parse_config(config_path: str) -> ConfigParser:
-    """
-    Parse config file and replace options with arguments where specified.
 
-    Args:
-        args: Namespace object from argparser
-    Returns:
-        ConfigParser object loaded with config options
-    """
-    try:
-        config = ConfigParser()
-        config.read(config_path)
-        return config
-    
-    except Exception as err:
-        print(f"Failed to load config file: {config_path}")
-        raise click.ClickException(err)
-    
+
 
 
 def logging_setup(
