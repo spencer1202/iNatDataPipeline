@@ -2,11 +2,183 @@ import sqlite3
 import pandas as pd
 from contextlib import closing
 import datetime as dt
+import re
+import click
+
+
+create_statements = {
+    "tracking_taxa":
+        """
+        CREATE TABLE IF NOT EXISTS tracking_taxa (
+            est_id                int     NOT NULL PRIMARY KEY,
+            elcode                text    NOT NULL,
+            sci_name              text,
+            common_name           text,
+            family                text,
+            author                text,
+            egt_uid               int     NOT NULL,
+            srank                 text,
+            track_status          text
+        );
+        """,
+    "inat_taxa":        
+        """
+        CREATE TABLE IF NOT EXISTS inat_taxa (
+            taxon_id              int     PRIMARY KEY NOT NULL,
+            inat_name             text,
+            date_updated          text
+        );
+        """,
+    "tracking_rel":
+        """
+        CREATE TABLE IF NOT EXISTS tracking_rel (
+            taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id),
+            est_id                int     NOT NULL REFERENCES tracking_taxa(est_id),
+            exact_match           boolean CHECK (exact_match IN (NULL, true, false)),
+            PRIMARY KEY(taxon_id, est_id)
+        );
+        """,
+    "users":
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            user_id               int     PRIMARY KEY NOT NULL,
+            login                 text,
+            name                  text
+        );
+        """,
+    "observations":
+        """
+        CREATE TABLE IF NOT EXISTS observations (
+            observation_id              int     PRIMARY KEY NOT NULL,
+            observer_id                 int     NOT NULL REFERENCES users(user_id),
+            taxon_id                    int     NOT NULL REFERENCES inat_taxa(taxon_id),
+            license                     text,
+            latitude                    float,
+            longitude                   float,
+            latitude_private            float,
+            longitude_private           float,
+            coordinate_precision        float,
+            coordinate_precision_public float,
+            observed_on                 text,
+            observed_on_string          text,
+            created_at                  text,
+            updated_at                  text,
+            quality_grade               text,
+            url                         text,
+            description                 text,
+            id_agreements               int,
+            id_disagreements            int,
+            place_guess                 text,
+            place_guess_private         text,
+            captive_cultivated          boolean CHECK (captive_cultivated IN (NULL, true, false)),
+            obscured                    boolean CHECK (obscured IN (NULL, true, false)),
+            in_project                  boolean CHECK (in_project IN (NULL, true, false))
+        );
+        """,
+    "experts":
+        """
+        CREATE TABLE IF NOT EXISTS experts (
+            user_id               int     PRIMARY KEY,
+            expertise             text
+        );
+        """,
+    "identifications":
+        """
+        CREATE TABLE IF NOT EXISTS identifications (
+            identification_id     int     PRIMARY KEY NOT NULL,
+            observation_id        int     NOT NULL REFERENCES observations(observation_id),
+            user_id               int     NOT NULL REFERENCES users(user_id),
+            taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id),
+            created_at            text
+        );
+        """,
+    "mapping":
+        """
+        CREATE VIEW IF NOT EXISTS mapping (
+            est_id, 
+            elcode, 
+            scientific_name, 
+            common_name, 
+            taxon_id, 
+            inat_name, 
+            exact_match
+        ) AS SELECT 
+            tt.est_id, 
+            tt.elcode, 
+            tt.scientific_name, 
+            tt.common_name, 
+            it.taxon_id, 
+            it.inat_name, 
+            tr.exact_match
+        FROM tracking_taxa AS tt
+        JOIN tracking_rel AS tr ON tt.est_id = tr.est_id
+        JOIN inat_taxa AS it ON tr.taxon_id = it.taxon_id;
+        """,
+    "project_members":
+        """
+        CREATE TABLE IF NOT EXISTS project_members (
+            user_id int PRIMARY KEY NOT NULL
+        );
+        """,
+    "not_in_inat":
+        """
+        CREATE VIEW IF NOT EXISTS not_in_inat 
+        AS SELECT * 
+        FROM tracking_taxa AS tt
+        LEFT JOIN tracking_rel AS tr
+        ON tt.est_id = tr.est_id
+        WHERE tr.est_id IS NULL;
+        """,
+    "tracking_trigger": 
+        """
+        CREATE TRIGGER IF NOT EXISTS fk_cascade_delete_tracking
+        AFTER DELETE ON inat_taxa
+        BEGIN
+            DELETE FROM tracking_rel WHERE taxon_id = OLD.taxon_id;
+        END;
+        """,
+    "expert_identifications":
+        """
+        CREATE VIEW IF NOT EXISTS expert_identifications (
+            identification_id,
+            observation_id,
+            user_id,
+            name,
+            login,
+            taxon_id,
+            created_at,
+            est_id,
+            elcode,
+            expertise
+        )
+        AS SELECT
+            id.identification_id,
+            id.observation_id,
+            id.user_id,
+            us.login,
+            us.name,
+            id.taxon_id,
+            id.created_at,
+            tr.est_id,
+            tr.elcode,
+            ex.expertise
+        FROM identifications AS id
+        LEFT JOIN tracking_rel 
+            ON id.taxon_id = tracking_rel.taxon_id
+        LEFT JOIN tracking_taxa AS tr 
+            ON tracking_rel.est_id = tr.est_id
+        JOIN experts AS ex 
+            ON id.user_id = ex.user_id
+        JOIN users AS us
+            ON id.user_id = us.user_id;
+        """
+}
+
 
 class DBManager:
     def __init__(self, db_file: str):
-        self._conn          : sqlite3.Connection = None
-        self.db_file        : str = db_file
+        self._conn   : sqlite3.Connection = None
+        self.db_file : str = db_file
 
 
     def __enter__(self):
@@ -49,121 +221,9 @@ class DBManager:
         """
         self.check_connection()
         
-        statements = [
-            """
-            CREATE TABLE IF NOT EXISTS tracking_taxa (
-                est_id                int     NOT NULL PRIMARY KEY,
-                elcode                text    NOT NULL,
-                sname                 text,
-                scomname              text
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS inat_taxa (
-                taxon_id              int     PRIMARY KEY NOT NULL,
-                inat_name             text,
-                date_updated          text
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS tracking_rel (
-                taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id),
-                est_id                int     NOT NULL REFERENCES tracking_taxa(est_id),
-                exact_match           boolean CHECK (exact_match IN (NULL, true, false)),
-                PRIMARY KEY(taxon_id, est_id)
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                user_id               int     PRIMARY KEY NOT NULL,
-                login                 text,
-                name                  text
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS observations (
-                observation_id              int     PRIMARY KEY NOT NULL,
-                observer_id                 int     NOT NULL REFERENCES users(user_id),
-                taxon_id                    int     NOT NULL REFERENCES inat_taxa(taxon_id),
-                license                     text,
-                latitude                    float,
-                longitude                   float,
-                latitude_private            float,
-                longitude_private           float,
-                coordinate_precision        float,
-                coordinate_precision_public float,
-                observed_on                 text,
-                observed_on_string          text,
-                created_at                  text,
-                updated_at                  text,
-                quality_grade               text,
-                url                         text,
-                description                 text,
-                id_agreements               int,
-                id_disagreements            int,
-                place_guess                 text,
-                place_guess_private         text,
-                captive_cultivated          boolean CHECK (captive_cultivated IN (NULL, true, false)),
-                obscured                    boolean CHECK (obscured IN (NULL, true, false)),
-                in_project                  boolean CHECK (in_project IN (NULL, true, false))
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS experts (
-                user_id               int     PRIMARY KEY REFERENCES users(user_id) NOT NULL,
-                expertise             text
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS identifications (
-                identification_id     int     PRIMARY KEY NOT NULL,
-                observation_id        int     NOT NULL REFERENCES observations(observation_id),
-                user_id               int     NOT NULL REFERENCES users(user_id),
-                taxon_id              int     NOT NULL REFERENCES inat_taxa(taxon_id),
-                created_at            text
-            );
-            """,
-            """
-            CREATE VIEW IF NOT EXISTS mapping (
-                est_id, 
-                elcode, 
-                sname, 
-                scomname, 
-                taxon_id, 
-                inat_name, 
-                exact_match
-            ) AS SELECT 
-                tt.est_id, 
-                tt.elcode, 
-                tt.sname, 
-                tt.scomname, 
-                it.taxon_id, 
-                it.inat_name, 
-                tr.exact_match
-            FROM tracking_taxa AS tt
-            JOIN tracking_rel AS tr ON tt.est_id = tr.est_id
-            JOIN inat_taxa AS it ON tr.taxon_id = it.taxon_id;
-            """,
-            """
-            CREATE VIEW IF NOT EXISTS not_in_inat 
-            AS SELECT * 
-            FROM tracking_taxa AS tt
-            LEFT JOIN tracking_rel AS tr
-            ON tt.est_id = tr.est_id
-            WHERE tr.est_id IS NULL;
-            """,
-            """
-            CREATE TRIGGER IF NOT EXISTS fk_cascade_delete_tracking
-            AFTER DELETE ON inat_taxa
-            BEGIN
-                DELETE FROM tracking_rel WHERE taxon_id = OLD.taxon_id;
-            END;
-            """
-        ]
-
         try:
             with closing(self._conn.cursor()) as cursor:
-                for statement in statements:
+                for _, statement in create_statements.items():
                     cursor.execute(statement)
         except:
             print("Error while creating database tables.")
@@ -197,15 +257,31 @@ class DBManager:
         """
         Inserts new taxon mappings into the database
         """
+
         statements = [
             """
-            INSERT OR IGNORE INTO tracking_taxa (est_id, elcode, sname, scomname)
-            VALUES (?, ?, ?, ?)
+            INSERT OR IGNORE INTO tracking_taxa (
+                est_id, 
+                elcode, 
+                scientific_name, 
+                common_name,
+                family,
+                author,
+                egt_uid,
+                srank,
+                track_status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(est_id) 
             DO UPDATE SET 
                 elcode = excluded.elcode,
-                sname = excluded.sname,
-                scomname = excluded.scomname;
+                scientific_name = excluded.scientific_name,
+                common_name = excluded.common_name
+                family = excluded.family,
+                author = excluded.author,
+                egt_uid = excluded.egt_uid,
+                srank = excluded.srank,
+                track_status = excluded.track_status;
             """,
             """
             INSERT OR IGNORE INTO inat_taxa (taxon_id, inat_name)
@@ -222,7 +298,7 @@ class DBManager:
         with closing(self._conn.cursor()) as cursor:
             cursor.executemany(
                 statements[0],
-                list(mapping_df[["est_id", "elcode", "sname", "scomname"]].itertuples(index=False))
+                list(mapping_df[["est_id", "elcode", "scientific_name", "common_name"]].itertuples(index=False))
             )
             cursor.executemany(
                 statements[1],
@@ -270,27 +346,18 @@ class DBManager:
         """
         Replace project_members table with new entries
         """
-        statements = [
-            """
-            DROP TABLE IF EXISTS project_members;
-            """,
-            """
-            CREATE TABLE project_members (
-                user_id int PRIMARY KEY NOT NULL
-            );
-            """,
-            """
-            INSERT OR IGNORE INTO project_members (user_id)
-            VALUES (?);
-            """
-        ]
+        insert_statement =  """
+                            INSERT OR IGNORE INTO project_members (user_id)
+                            VALUES (?);
+                            """
+
         self.check_connection()
 
         with closing(self._conn.cursor()) as cursor:
             ids = [(id,) for id in member_ids]
-            cursor.execute(statements[0])
-            cursor.execute(statements[1])
-            cursor.executemany(statements[2], ids)
+            cursor.execute("DROP TABLE IF EXISTS project_members;")
+            cursor.execute(create_statements["project_members"])
+            cursor.executemany(insert_statement, ids)
             count = cursor.rowcount
         
         return count
@@ -435,11 +502,9 @@ class DBManager:
         """
         self.check_connection()
 
-        # count = identifications_df.to_sql("temp_identifications", self._conn, if_exists="replace")
         with closing(self._conn.cursor()) as cursor:
             cursor.executemany(statement, identifications)
             count = cursor.rowcount
-            # cursor.execute("DROP TABLE IF EXISTS temp_identifications")
         
         return count
     
@@ -455,3 +520,73 @@ class DBManager:
         
         with closing(self._conn.cursor()) as cursor:
             cursor.execute(statement, [dt.date.today()] + list(complete_taxa))
+    
+
+    @staticmethod
+    def match_wildcards(elcode, pattern_string):
+        """
+        Converts SQL wildcards (A%|I%) into a corresponding regex pattern and checks if the elcode matches.
+        """
+        try:
+            if not elcode or not pattern_string:
+                return 0
+            
+            elcode_str = str(elcode).strip()
+            pattern_str = str(pattern_string).strip()
+        
+            if not elcode_str or not pattern_str:
+                return 0
+
+            patterns = pattern_string.split('|')
+            regex_parts = []
+
+            for p in patterns:
+                safe_p = p.replace(r"%", ".*")
+                regex_parts.append(safe_p)
+
+            combined_regex = f"^({"|".join(regex_parts)})$"
+            return 1 if re.match(combined_regex, elcode) else 0
+
+        except:
+            print(f"\n ---  Crash detected ---")
+            print(f"Inputs causing crash: elcode={repr(elcode)}, pattern={repr(pattern_string)}")
+            print(f"--------------------------")
+            raise
+    
+
+    def update_experts(self, df: pd.DataFrame):
+        """
+        Update the experts table using the given dataframe.
+        """
+        self.check_connection()
+        statement = """
+        INSERT INTO experts (user_id, expertise)
+        VALUES (?, ?);
+        """
+        
+        try:
+            tuples = list(df[["iNaturalist_id", "Expertise LU"]].itertuples(index=False))
+
+        except KeyError as err:
+            raise click.ClickException(f"Experts dataframe does not contain the required columns:\n{err}")
+
+        with closing(self._conn.cursor()) as cursor:
+            cursor.execute("DROP TABLE IF EXISTS experts")
+            cursor.execute(create_statements["experts"])
+            cursor.executemany(statement, tuples)
+            count = cursor.rowcount
+
+        return count
+            
+
+    def get_expert_identifications(self):
+        self.check_connection()
+        self._conn.create_function("REGEXP_MATCH", 2, DBManager.match_wildcards)
+        self._conn.execute(create_statements["expert_identifications"])
+
+        query = """
+        SELECT * FROM expert_identifications
+        WHERE REGEXP_MATCH(elcode, expertise) = 1;
+        """
+
+        return self._select_query(query)

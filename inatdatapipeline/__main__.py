@@ -3,14 +3,12 @@ TODO insert description of iNatDataPipeline tool
 
 """
 
-import os
 import logging
 from configparser import ConfigParser
 import click
 from pathlib import Path
-from pydantic import BaseModel, Field, FilePath, field_validator, BeforeValidator
-from typing import Optional, Annotated
-
+from typing import Optional
+import pandas as pd
 
 import taxa
 import helpers
@@ -22,9 +20,6 @@ from observations import ObservationQuery
 
 logger = logging.getLogger('pipeline')
 logger.setLevel(logging.DEBUG)
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +66,7 @@ def parse_config(config_path: str) -> ConfigParser:
         return cf
     
     except Exception as err:
-        print(f"Failed to load config file: {config_path}")
+        logger.error(f"Failed to load config file: {config_path}")
         raise click.ClickException(err)
 
 
@@ -137,19 +132,6 @@ def main(ctx: click.Context, username: str | None, db: str | None, config_path: 
     logger.info(f"File database: {raw_config["core"]["db_file"]}")
     logger.info("")
 
-    
-
-# ---------------------------------------------------------------------------
-# Export
-# ---------------------------------------------------------------------------
-
-@main.command("export")
-@click.pass_context
-def export(ctx: click.Context):
-    """Export data from local database"""
-    logger.info("Export - not implemented yet!")
-    _done()
-
 
 # ---------------------------------------------------------------------------
 # Build Taxon Map
@@ -174,15 +156,15 @@ def build_taxon_map(ctx: click.Context, tracking: str | None, rebuild: bool = Fa
     """
     logger.info("Building taxon map...")
 
-    # Fill in and valiate config
+    # Inject config override
     if tracking is not None:
         ctx.obj["taxa"]["tracking_list"] = tracking
-    cf = config.get_validated_config(logger, ctx.obj)
-    if not cf:
-        return
 
-    db_manager = get_db(cf.core.db_file)
-    auth = get_auth(cf.core.user_agent, cf.core.username)
+    # Validate configs
+    cfg_core, cfg_taxa = config.validate_command_config(ctx, "taxa", config.TaxaConfig)
+
+    db_manager = get_db(cfg_core.db_file)
+    auth = get_auth(cfg_core.user_agent, cfg_core.username)
     taxon_mapper = taxa.TaxonMappingBuilder(db_manager)
 
     # Make sure database is set up
@@ -190,8 +172,8 @@ def build_taxon_map(ctx: click.Context, tracking: str | None, rebuild: bool = Fa
         db.setup_db()
 
     taxon_mapper.build_mapping(
-        cf.taxa.tracking_list,
-        cf.taxa.name_overrides_file,
+        cfg_taxa.tracking_list,
+        cfg_taxa.name_overrides_file,
         auth,
         rebuild
     )
@@ -216,24 +198,35 @@ def download_observations(ctx: click.Context, days_since_update: Optional[int] =
     """
     logger.info("Downloading observations...")
     
-    # Fill in and valiate config
+    #  Inject config override
     if days_since_update is not None:
-        # print(f"days_since_update = {days_since_update}")
         ctx.obj["observations"]["update_after_days"] = days_since_update
-    cf = config.get_validated_config(logger, ctx.obj)
-    if not cf:
-        return
     
-    db_manager = get_db(cf.core.db_file)
-    auth = get_auth(cf.core.user_agent, cf.core.username)
+    # Validate config
+    cfg_core, cfg_obs = config.validate_command_config(ctx, "observations", config.ObservationsConfig)
+    
+    db_manager = get_db(cfg_core.db_file)
+    auth = get_auth(cfg_core.user_agent, cfg_core.username)
     
     # Make sure database is set up
     with db_manager as db:
         db.setup_db()
 
-    observation_querier = ObservationQuery(db_manager, cf)
+    observation_querier = ObservationQuery(db_manager, cfg_obs)
     observation_querier.get_observations(auth)
 
+    _done()
+
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+@main.command("export")
+@click.pass_context
+def export(ctx: click.Context):
+    """Export data from local database"""
+    logger.info("Export - not implemented yet!")
     _done()
 
 
@@ -247,15 +240,14 @@ def project_members(ctx: click.Context):
     """
     Query for project members and update database table
     """
-    cf = config.get_validated_config(logger, ctx.obj)
-    if not cf:
-        return
+    # Validate config
+    cfg_core, cfg_obs = config.validate_command_config(ctx, "observations", config.ObservationsConfig)
     
-    logger.info(f"Updating current members in project: {cf.observations.project_id}")
+    logger.info(f"Updating current members in project: {cfg_obs.project_id}")
 
-    querier = ProjectMembers(cf.observations.project_id, cf.observations.per_page)
-    db_manager = get_db(cf.core.db_file)
-    auth = get_auth(cf.core.user_agent, cf.core.username)
+    querier = ProjectMembers(cfg_obs.project_id, cfg_obs.per_page)
+    db_manager = get_db(cfg_core.db_file)
+    auth = get_auth(cfg_core.user_agent, cfg_core.username)
     
     # Make sure database is set up
     with db_manager as db:
@@ -278,16 +270,19 @@ def setup_database(ctx: click.Context):
     """
     logger.info(f"Setting up database...")
 
-    cf = config.get_validated_config(logger, ctx.obj)
-    if not cf:
-        return
+    # Validate config
+    cfg, _ = config.validate_command_config(ctx)
     
-    db_manager = get_db(cf.core.db_file)
+    db_manager = get_db(cfg.db_file)
     with db_manager as db:
         db.setup_db()
     
     _done()
 
+
+# ---------------------------------------------------------------------------
+# Update Experts
+# ---------------------------------------------------------------------------
 
 @main.command("update-experts")
 @click.option(
@@ -300,15 +295,84 @@ def update_experts(ctx: click.Context, expert_list: Optional[str]):
     """
     Replace experts list
     """
-    
+    # Inject config override
     if expert_list:
         ctx.obj["experts"]["csv_file"] = expert_list
-    cf = config.get_validated_config(logger, ctx.obj)
-    if not cf:
-        return
-    
-    db_manager = get_db(cf.core.db_file)
 
+    # Validate config
+    cfg_core, cfg_experts = config.validate_command_config(ctx, "experts", config.ExpertsConfig)
+
+    experts_df = pd.read_csv(cfg_experts.experts_file)
+    experts_df = experts_df.dropna(subset=["iNaturalist_id"])
+
+    db_manager = get_db(cfg_core.db_file)
+    with db_manager as db:
+        count = db.update_experts(experts_df)
+
+    logger.info(f"Inserted {count} experts!")
+
+
+# ---------------------------------------------------------------------------
+# Get Biotics tracking query
+# ---------------------------------------------------------------------------
+@main.command("biotics-query")
+@click.pass_context
+def biotics_query(ctx: click.Context):
+    """
+    Print the tracking list query for Biotics
+    """
+    query = """
+        select 
+            to_char(est.element_subnational_id) "name", 
+            sname.scientific_name||' : '|| est.s_primary_common_name as "label", 
+            sname.scientific_name "sname", sname.author_name as "author", 
+            est.s_primary_common_name "scomname", 
+            est.s_rank "s_rank", 
+            D_EO_TRACK_STATUS.eo_track_status_desc "eo_track_status_desc", 
+            'https://explorer.natureserve.org/Taxon/ELEMENT_GLOBAL.'||egt.element_global_ou_uid||'.'||egt.element_global_seq_uid as "explorer", 
+            'ELEMENT_GLOBAL.'||egt.element_global_ou_uid||'.'||egt.element_global_seq_uid as "egt_uid", 
+            hcu_f.higher_class_unit_name AS "family", 
+            egt.elcode_bcd as elcode_bcd, 
+            nc.name_category_desc,
+            delimlist(
+                'SELECT dgh.growth_habit_desc' 
+                || ' FROM D_GROWTH_HABIT dgh, PLANT_CAG_GROWTH_HABIT gh' 
+                || ' WHERE gh.d_growth_habit_id = dgh.d_growth_habit_id (+) and gh.element_global_id (+) = ' 
+                || egt.element_global_id
+            ) "growth_habit",
+            case when egt.elcode_bcd like 'A%' or egt.elcode_bcd like 'I%' then 'Animal'
+                when egt.elcode_bcd like 'P%' or egt.elcode_bcd like 'N%' then 'Plant'
+                when egt.elcode_bcd like 'C%' or egt.elcode_bcd like 'G%' then 'Community'
+            end "element_type",
+            d_duration.duration_desc "duration"
+        from 
+            element_subnational est, 
+            scientific_name sname, 
+            element_global egt, 
+            element_national ent, 
+            D_EO_TRACK_STATUS, 
+            higher_class_unit hcu, 
+            higher_class_unit hcu_f, 
+            D_NAME_CATEGORY nc, 
+            d_duration, 
+            plant_cag_duration pcd, 
+            plant_cag
+        where est.sname_id = sname.scientific_name_id 
+            and est.element_national_id=ent.element_national_id 
+            and ent.element_global_id=egt.element_global_id 
+            and egt.higher_class_unit_id = hcu.higher_class_unit_id(+)
+            and hcu.parent_unit_id = hcu_f.higher_class_unit_id(+)
+            and est.d_eo_track_status_id = D_EO_TRACK_STATUS.d_eo_track_status_id (+)
+            and sname.D_NAME_CATEGORY_id = nc.D_NAME_CATEGORY_id (+)
+            and egt.element_global_id = plant_cag.element_global_id (+)
+            and plant_cag.element_global_id = pcd.element_global_id (+)
+            and pcd.d_duration_id = d_duration.d_duration_id (+)
+            and D_EO_TRACK_STATUS.eo_track_status_desc = 'Track all extant and selected historical EOs'
+        order by scientific_name
+        """
+    print(query)
+
+    _done()
 
 
 if __name__ == "__main__":

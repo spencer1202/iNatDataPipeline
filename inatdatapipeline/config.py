@@ -2,7 +2,7 @@ from pathlib import Path
 import click
 import helpers
 import logging
-from typing import Annotated, Optional, TypeVar
+from typing import Annotated, Optional, TypeVar, Type, Tuple
 from pydantic import BeforeValidator, BaseModel, FilePath
 
 # ---------------------------------------------------------------------------
@@ -86,10 +86,35 @@ class Config(BaseModel):
     overrides       : OverridesConfig
 
 
+T = TypeVar('T', bound=BaseModel)
 
-def get_validated_config(logger: logging.Logger, raw_config: dict) -> Config:
+def validate_command_config(
+        ctx: click.Context, 
+        section_name: str = None, 
+        model_cls: Type[T] = None
+) -> Tuple[CoreConfig, Optional[T]]:
+    """
+    Validate the global core config section and optionally a specific subcommand.
+    Arguments:
+        ctx:
+            Click context object loaded with configs.
+        section_name:
+            The name of the config section to load.
+        model_cls:
+            The pydantic config model to use to validate the config section.
+    Returns:
+        A tuple containing a validated CoreConfig model and a model of the specified type.
+    """
     try:
-        return Config(**raw_config)
-    except Exception as ex:
-        logger.error(f"Invalid configuration settings:\n{ex}")
-        return None
+        core_config = CoreConfig(**ctx.obj["core"])
+
+        if not section_name or not model_cls:
+            return core_config, None
+
+        section_data = ctx.obj.get(section_name, {})
+        subcommand_config = model_cls(**section_data)
+
+        return core_config, subcommand_config
+
+    except Exception as err:
+        raise click.ClickException(f"Configuration error in [{section_name}]:\n{err}")

@@ -24,7 +24,7 @@ logger = logging.getLogger('pipeline')
 
 class ObservationQuery:
 
-    def __init__(self, db_manager: DBManager, config: config.Config):
+    def __init__(self, db_manager: DBManager, cfg: config.ObservationsConfig):
         """
         Create object for pulling observations from iNaturalist API.
         Args:
@@ -35,17 +35,17 @@ class ObservationQuery:
                 Reads from "observations" section to get place ID, quality grades, records per page, observation fields JSON file, and 
                 taxon batch size.
         """
-        self.db_manager     = db_manager                            # Database manager object
-        self.place_id       = config.observations.place_id          # Place ID to filter search (e.g. Oregon = 10)
-        self.per_page       = config.observations.per_page          # Number of records to return per request
-        self.batch_size     = config.observations.batch_size        # Taxon ID batch size for querying observations
-        self.quality_grade  = config.observations.quality_grade     # iNaturalist quality grade filter(s)
-                                                                    # Comma separated (e.g. "research" or "research,casual")
-        self.fields_json    = config.observations.fields_json       # JSON file with the observation fields to query for
-        self.update_days    = config.observations.update_after_days # Only query for taxa that were last updated at least 
-                                                                    # this many days ago
-        self.project_id     = config.observations.project_id        # iNaturalist project ID to check for
-        self.max_obs        = config.observations.max_observations  # Maximum number of observations to process for this run
+        self.db_manager     = db_manager                # Database manager object
+        self.place_id       = cfg.place_id              # Place ID to filter search (e.g. Oregon = 10)
+        self.per_page       = cfg.per_page              # Number of records to return per request
+        self.batch_size     = cfg.batch_size            # Taxon ID batch size for querying observations
+        self.quality_grade  = cfg.quality_grade         # iNaturalist quality grade filter(s)
+                                                        # Comma separated (e.g. "research" or "research,casual")
+        self.fields_json    = cfg.fields_json           # JSON file with the observation fields to query for
+        self.update_days    = cfg.update_after_days     # Only query for taxa that were last updated at least 
+                                                        # this many days ago
+        self.project_id     = cfg.project_id            # iNaturalist project ID to check for
+        self.max_obs        = cfg.max_observations      # Maximum number of observations to process for this run
 
 
     @staticmethod
