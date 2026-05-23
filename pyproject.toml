@@ -5,7 +5,7 @@ authors = [
     { name = "Spencer Henwood", email = "henwood@pdx.edu" }
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "pandas",
     "requests",
@@ -13,8 +13,14 @@ dependencies = [
     "dotenv",
     "pytest",
     "setuptools",
-    "prison"
+    "prison",
+    "click"
 ]
+
+[tool.setuptools.packages.find]
+include = ["inatdatapipeline"]  # ["*"] by default
+exclude = ["tests"]
+
 
 [build-system]
 requires = ["setuptools"]

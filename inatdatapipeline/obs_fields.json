@@ -3,6 +3,7 @@
 	"community_taxon_id": true,
 	"context_geoprivacy": true,
 	"created_at": true,
+	"updated_at": true,
 	"description": true,
 	"geojson": {
 	  "coordinates": true,

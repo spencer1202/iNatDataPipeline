@@ -9,15 +9,22 @@ import requests
 import prison
 import json
 import time
+import click
+import numpy as np
 
+import config
+from project_members import ProjectMembers
 from db_manager import DBManager
 from inaturalist_auth import iNaturalistAuth
 
 logger = logging.getLogger('pipeline')
 
+
+
+
 class ObservationQuery:
 
-    def __init__(self, db_manager: DBManager, config: ConfigParser):
+    def __init__(self, db_manager: DBManager, cfg: config.ObservationsConfig):
         """
         Create object for pulling observations from iNaturalist API.
         Args:
@@ -28,24 +35,17 @@ class ObservationQuery:
                 Reads from "observations" section to get place ID, quality grades, records per page, observation fields JSON file, and 
                 taxon batch size.
         """
-        try:
-            self.db_manager     = db_manager                                        # Database manager object
-            self.place_id       = int(config["observations"]["place_id"])           # Place ID to filter search (e.g. Oregon = 10)
-            self.per_page       = int(config["observations"]["per_page"])           # Number of records to return per request
-            self.batch_size     = int(config["observations"]["batch_size"])         # Taxon ID batch size for querying observations
-            self.quality_grade  = config["observations"]["quality_grade"]           # iNaturalist quality grade filter(s)
-                                                                                    # Comma separated (e.g. "research" or "research,casual")
-            self.fields_json    = config["observations"]["fields_json"]             # JSON file with the observation fields to query for
-            self.update_days    = int(config["observations"]["update_before_days"]) # Only query for taxa that were last updated at least 
-                                                                                    # this many days ago
-            self.project_id     = int(config["observations"]["project_id"])         # iNaturalist project ID to check for
-        
-        except TypeError:
-            logger.error("Malformed observation configuration options (could not convert to integer).")
-            raise
-        except KeyError:
-            logger.error("Malformed observation configuration options (missing section or field).")
-            raise
+        self.db_manager     = db_manager                # Database manager object
+        self.place_id       = cfg.place_id              # Place ID to filter search (e.g. Oregon = 10)
+        self.per_page       = cfg.per_page              # Number of records to return per request
+        self.batch_size     = cfg.batch_size            # Taxon ID batch size for querying observations
+        self.quality_grade  = cfg.quality_grade         # iNaturalist quality grade filter(s)
+                                                        # Comma separated (e.g. "research" or "research,casual")
+        self.fields_json    = cfg.fields_json           # JSON file with the observation fields to query for
+        self.update_days    = cfg.update_after_days     # Only query for taxa that were last updated at least 
+                                                        # this many days ago
+        self.project_id     = cfg.project_id            # iNaturalist project ID to check for
+        self.max_obs        = cfg.max_observations      # Maximum number of observations to process for this run
 
 
     @staticmethod
@@ -56,9 +56,14 @@ class ObservationQuery:
 
 
     @staticmethod
-    def create_date_taxon_map(taxa_df: pd.DataFrame) -> dict:
+    def create_date_taxon_map(taxa_df: pd.DataFrame) -> dict[str: set]:
         """
         Creates a map that groups taxon_ids into sets with date_updated as the key.
+        Args:
+            taxa_df: 
+                Taxa dataframe to create a date map from
+        Returns:
+            Dictionary that maps a date string to a set of taxon IDs.
         """
         date_taxon_map = taxa_df.groupby("date_updated")["taxon_id"].apply(set).to_dict()
         date_taxon_map["None"] = set(taxa_df[taxa_df["date_updated"].isna()]["taxon_id"])
@@ -67,6 +72,18 @@ class ObservationQuery:
 
     @staticmethod
     def download_observations(ids: list, params: dict, headers: str) -> list:
+        """
+        Download iNaturalist observations for a list of ID.
+        Args:
+            ids:
+                List of taxon IDs to download observations for.
+            params:
+                Base HTTP request parameters.
+            headers:
+                HTTP authentication headers.
+        Returns:
+            A list of result dictionaries, decoded from the HTTP response.
+        """
         observations = []
         params["taxon_id"] = ",".join(str(id) for id in ids)
         url = "https://api.inaturalist.org/v2/observations"
@@ -94,14 +111,14 @@ class ObservationQuery:
                 
             except requests.Timeout:
                 logger.error(f"Request for taxon {params["taxon_id"]} timed out.")
-            except:
-                logger.error(f"Unknown error occurred while dowloading observations.")
+            except Exception as err:
+                logger.error(f"Unknown error occurred while dowloading observations: {err}")
 
-        logger.debug(f"\tFinished downloading {len(observations)} results.")
+        logger.debug(f"  Finished downloading {len(observations)} results.")
         return observations
 
 
-    def add_records_from_result(self, result: list, user_set: set):
+    def add_records_from_result(self, result: list, user_set: set) -> tuple[dict, list[dict], list[dict]]:
         """
         Takes the JSON response dictionary for one observation and extracts the observation information and
         a list of its identifications and associated users.
@@ -112,9 +129,7 @@ class ObservationQuery:
             user_set:
                 Set of user IDs that have already been encountered.
         Returns:
-            observations:
-            identifications:
-            users:
+            A tuple with one observation, a list of identifications, and a list of new users.
             
         """
         identifications = []
@@ -124,8 +139,8 @@ class ObservationQuery:
             "observer_id"                   : result.get("user", {}).get("id"),
             "taxon_id"                      : result.get("community_taxon_id"),
             "license"                       : result.get("license_code"),
-            "latitude_public"               : result.get("geojson", {}).get("coordinates", [None, None])[0],
-            "longitude_public"              : result.get("geojson", {}).get("coordinates", [None, None])[1],
+            "latitude"                      : result.get("geojson", {}).get("coordinates", [None, None])[0],
+            "longitude"                     : result.get("geojson", {}).get("coordinates", [None, None])[1],
             "latitude_private"              : result.get("private_geojson", {}).get("coordinates", [None, None])[0],
             "longitude_private"             : result.get("private_geojson", {}).get("coordinates", [None, None])[1],
             "coordinate_precision"          : result.get("positional_accuracy"),
@@ -133,13 +148,14 @@ class ObservationQuery:
             "observed_on"                   : result.get("observed_on"),
             "observed_on_string"            : result.get("observed_on_string"),
             "created_at"                    : result.get("created_at"),
+            "updated_at"                    : result.get("updated_at"),
             "quality_grade"                 : result.get("quality_grade"),
             "url"                           : result.get("uri"),
             "description"                   : result.get("description"),
             "id_agreements"                 : result.get("num_identification_agreements"),
             "id_disagreements"              : result.get("num_identification_disagreements"),
             "captive_cultivated"            : result.get("captive"),
-            "place_guess_public"            : result.get("place_guess"),
+            "place_guess"                   : result.get("place_guess"),
             "place_guess_private"           : result.get("place_guess_private"),
             "obscured"                      : result.get("obscured"),
             "in_project"                    : True if self.project_id in result.get("project_ids", []) else False
@@ -160,8 +176,6 @@ class ObservationQuery:
             user_set
         )
         new_users.extend(ident_users)
-
-        logger.debug(f"  [ Observation {observation["observation_id"]:>10} ]  Identifications: {len(identifications):<2}  New users: {len(new_users)}")
 
         return observation, identifications, new_users
 
@@ -212,7 +226,7 @@ class ObservationQuery:
 
     def get_observations(self, auth: iNaturalistAuth):
         """
-        Downloads observations from iNaturalist using the iNaturalist taxon IDs in the local database.
+        Downloads observations from iNaturalist using the taxon IDs in the local database.
         """
         # Set up authentication
         if not auth.get_access_token():
@@ -236,36 +250,51 @@ class ObservationQuery:
             base_params["fields"] = prison.dumps(fields_dict)
         except:
             logger.error(f"Failed to load query observation fields from file: {self.fields_json}.")
-            raise
+            return
 
         # Get iNat taxa from database
-        with self.db_manager as db:
-            taxa_df = db.get_inat_taxa()
+        try:
+            with self.db_manager as db:
+                taxa_df = db.get_inat_taxa()
+        except Exception as err:
+            logger.error(f"Failed to get iNaturalist taxa from database: {err}")
+
+        # If days_updated is zero, update all taxa without a date filter.
+        if not self.update_days:
+            taxa_df["date_updated"] = None
+
+        # Filter for taxa queried more than days_updated before now
+        else:
+            target_date = dt.date.today() - dt.timedelta(days=self.update_days)
+            date_mask = (taxa_df["date_updated"].isna()) | (taxa_df["date_updated"] <= pd.Timestamp(target_date))
+            taxa_df = taxa_df[date_mask]
         
         if len(taxa_df) == 0:
-            logger.error("iNaturalist taxa mapping table is empty.")
+            logger.warning("No taxa left to search for.")
             return
-        logger.info(f"Querying observations for {len(taxa_df)} taxa.")
+        logger.info(f"Downloading observations for {len(taxa_df)} taxa.")
 
         date_taxa_map = ObservationQuery.create_date_taxon_map(taxa_df)
 
+        # Iterate through IDs and run requests
         observations = []
         identifications = []
         users = []
         users_set = set()
+        complete_taxa_set = set()
+        max_reached = False
 
         for date, ids in date_taxa_map.items():
             batches = ObservationQuery.get_batches(list(ids), self.batch_size)
             logger.debug("")
             if date != "None":
-                logger.debug(f"*** Processing taxa with 'created after' date filter: {date} ***")
+                logger.debug(f"Processing taxa with 'created after' date filter: {date}")
                 base_params['created_d1'] = date
             else:
-                logger.debug("*** Processing taxa with no 'created after' date filter ***")
+                logger.debug("Processing taxa with no 'created after' date filter")
             
             for i, batch in enumerate(batches, start=1):
-                logger.debug("")
-                logger.debug(f"Processing batch #{i} with {len(batch)} taxa...")
+                logger.debug(f"* Processing batch #{i} with {len(batch)} taxa...")
                 # Get list of JSON response dictionaries
                 results = ObservationQuery.download_observations(batch, base_params, headers)
                 # Add observations, identification, and users from results
@@ -277,65 +306,35 @@ class ObservationQuery:
                     observations.append(new_obs)
                     identifications.extend(new_ident)
                     users.extend(new_users)
-        
-        observations_df = pd.DataFrame(observations)
-        identifications_df = pd.DataFrame(identifications)
-        users_df = pd.DataFrame(users)
+                
+                # Update set of completed taxa
+                complete_taxa_set.update(batch)
 
-        observations_df.to_csv("output/observations.csv", index=False)
-        identifications_df.to_csv("output/identifications.csv", index=False)
-        users_df.to_csv("output/users.csv", index=False)
-
-        print(f"Observations:\n{observations_df.head(50)}\n")
-        print(f"Identifications:\n{identifications_df}\n")
-        print(f"Users:\n{users_df}\n")
-
-        return observations, identifications, users
-        
-
-class ProjectMembers:
-    def __init__(self, config: ConfigParser):
-        self.project_id = config["observations"]["project_id"]
-        self.per_page = config["observations"]["per_page"]
-    
-
-    def fetch_project_members(self, auth: iNaturalistAuth):
-        url = f"https://api.inaturalist.org/v2/projects/{self.project_id}/members"
-        headers = auth.get_auth_headers()
-        params = {
-            "per_page": self.per_page
-        }
-
-        # Make API requests
-        all_results = []
-        page = 1
-        while True:
-            params["page"] = page
-            try:
-                response = requests.get(
-                    url=url,
-                    headers=headers,
-                    params=params,
-                    timeout=30
-                )
-                response.raise_for_status()
-                data = response.json()
-                results = data.get("results", [])
-                all_results.extend(results)
-                time.sleep(0.5)
-
-                if len(results) < self.per_page:
+                if len(observations) > self.max_obs:
+                    logger.info("Exceeded maximum number of observations for this run. Wrapping up queries...")
+                    max_reached = True
                     break
 
-                page += 1
-                time.sleep(0.5)
-                
-            except requests.Timeout:
-                logger.error(f"Request for taxon {params["taxon_id"]} timed out.")
+            if max_reached:
+                break
+
+        logger.info("Finished downloading!")
+        logger.info("")
+
+        # Update database
+        try:
+            with self.db_manager as db:
+                user_count = db.insert_users(users)
+                obs_count = db.insert_observations(observations)
+                ident_count = db.insert_identifications(identifications)
+                db.update_checked_date(complete_taxa_set)
+        except Exception as err:
+            logger.error(f"Failed to insert into database: {err}\n")
         
-        # Extract user IDs from API response
-        users = set()
-        for result in all_results:
-            user_id = result.get("user", {}).get("id")
-            users.add(user_id)
-            
+        # Report results
+        logger.info("Inserted new records into database:")
+        logger.info(f"Users:            {user_count}")
+        logger.info(f"Observations:     {obs_count}")
+        logger.info(f"Identifications:  {ident_count}")
+        
+

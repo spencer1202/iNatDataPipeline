@@ -137,11 +137,11 @@ class TaxonMappingBuilder:
     @staticmethod
     def preprocess(df: pd.DataFrame):
         """
-        Fills the sname_clean column with clean versions of each taxon name.
+        Fills the sname_clean column with preprocessed versions of each taxon name.
         """
         df["sname_clean"] = np.where(
             df["sname_clean"].isna(),
-            df["sname"].apply(TaxonMappingBuilder.preprocess_name),
+            df["sci_name"].apply(TaxonMappingBuilder.preprocess_name),
             df["sname_clean"]
         )
         return df
@@ -157,14 +157,19 @@ class TaxonMappingBuilder:
         return df
 
 
+
     @staticmethod
     def rename_tracking_cols(df: pd.DataFrame) -> pd.DataFrame:
         col_renames = {
-            "SNAME"                     : "sname", 
-            "ELCODE"                    : "elcode", 
-            "ELEMENT_SUBNATIONAL_ID"    : "est_id",
-            "SCOMNAME"                  : "scomname"
+            "sname"                     : "sci_name", 
+            "ELCODE_BCD"                : "elcode", 
+            "name"                      : "est_id",
+            "scomname"                  : "common_name",
+            "s_rank"                    : "srank",
+            "eo_track_status_desc"      : "track_status"
         }
+
+
 
         return df.rename(columns=col_renames)
 
@@ -232,10 +237,36 @@ class TaxonMappingBuilder:
 
         return pd.DataFrame(new_rows)
 
+    @staticmethod
+    def validate_tracking_list(df: pd.DataFrame):
+        """
+        Validates that all of the required columns are actually in the tracking list dataframe. 
+        Raises an AssertionError if a column is missing.
+        """
+
+        expected_cols = [
+            "sname",
+            "ELCODE_BCD",
+            "name",
+            "scomname",
+            "family",
+            "author",
+            "egt_uid",
+            "s_rank",
+            "eo_track_status_desc",
+            "explorer",
+            "growth_habit",
+            "element_type",
+            "duration"
+        ]
+        actual_cols = df.columns
+        for col in expected_cols:
+            assert col in actual_cols, f"{col}"
+        
     
     def build_mapping(self, tracking_file: str, overrides_file: str, auth: iNaturalistAuth, force_rebuild: bool = False):
         # Import overrides list
-        logger.info("Loading tracking list and name overrides...")
+        logger.debug("Loading tracking list and name overrides...")
         try:
             overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
         except FileNotFoundError as err:
@@ -250,47 +281,87 @@ class TaxonMappingBuilder:
             logger.error(f"Could not find tracking file: {tracking_file}.")
             return
         logger.debug(f"* Loaded {len(tracking_df)} taxa from tracking list {tracking_file}.")
+
+        # Validate that tracking list has correct columns
+        try:
+            TaxonMappingBuilder.validate_tracking_list(tracking_df)
+        except AssertionError as err:
+            logger.error(f"Tracking list is missing required field: {err}")
+            return
+
         tracking_df = TaxonMappingBuilder.rename_tracking_cols(tracking_df)
 
         # Insert name overrides
-        logger.info("Inserting name overrides...")
+        logger.debug("Inserting name overrides...")
         tracking_df = TaxonMappingBuilder.insert_overrides(tracking_df, overrides_df)
         overrides_count = len(tracking_df[tracking_df["sname_clean"].notna()])
         logger.debug(f"* Updated {overrides_count} names.")
 
         # Preprocess names
-        logger.info("Preprocessing scientific names...")
+        logger.debug("Preprocessing scientific names...")
         tracking_df = TaxonMappingBuilder.preprocess(tracking_df)
 
         # Make sure database is set up
         with self.db_manager as db:
             db.setup_db()
+    
+        cols = [
+            "est_id", 
+            "elcode", 
+            "sci_name", 
+            "common_name",
+            "family",
+            "author",
+            "egt_uid",
+            "srank",
+            "track_status",
+            "explorer",
+            "growth_habit",
+            "element_type",
+            "duration",
+            "taxon_id", 
+            "inat_name",
+        ]
 
         # Create mapping dataframe, either with prior entries or from scratch
         if not force_rebuild:
             logger.info("Loading existing mappings...")
-            with self.db_manager as db:
-                mapping_df = db.get_mappings()
+            try:
+                with self.db_manager as db:
+                    mapping_df = db.get_mappings()
+            except Exception as err:
+                logger.error(f"Failed to load mappings: {err}")
+                return
+            
             logger.debug(f"* Retrieved {len(mapping_df)} taxon mappings from database.")
+
         else:
             logger.info("Rebuilding taxon mappings from scratch...")
-            mapping_df = pd.DataFrame(columns=["est_id", "elcode", "sname", "scomname", "taxon_id", "inat_name"])
+            mapping_df = pd.DataFrame(columns=cols)
 
-        logger.info("Filtering for taxa that don't have mappings yet...")
+        logger.debug("Filtering for taxa that don't have mappings yet...")
+
         match_mask = tracking_df["est_id"].isin(mapping_df["est_id"])
         to_match = tracking_df[~match_mask]
+
         if len(to_match) == 0:
             logger.warning("* All taxa on tracking list are already present in mappings.")
-        else:
-            logger.debug(f"* Found {len(to_match)} tracking list entries not present in existing mappings.")
-            to_match = TaxonMappingBuilder.get_undescribed_names(to_match)
-            logger.debug(f"Undescribed taxa: {len(to_match[~to_match["exact_match"]])}")
-            
-            logger.info("")
-            logger.info("Beginning taxon queries...")
-            new_mappings = TaxonMappingBuilder.get_new_mappings(to_match, auth)
+            return
+        
+        logger.debug(f"* Found {len(to_match)} tracking list entries not present in existing mappings.")
+        to_match = TaxonMappingBuilder.get_undescribed_names(to_match)
+        logger.debug(f"Undescribed taxa: {len(to_match[~to_match["exact_match"]])}")
+        
+        # Generate new mappings
+        logger.info("")
+        logger.info("Beginning taxon queries...")
+        new_mappings = TaxonMappingBuilder.get_new_mappings(to_match, auth)
 
+        # Insert mappings into database
+        try:
             with self.db_manager as db:
                 db.insert_mappings(new_mappings)
+        except Exception as err:
+            logger.error(f"Failed to insert mappings into database: {err}")
         
   
