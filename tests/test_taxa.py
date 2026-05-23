@@ -4,9 +4,9 @@ import time
 import os
 import pandas as pd
 
-from inatdatapipeline.taxa import TaxonMappingBuilder
-import inatdatapipeline.db_manager as db_manager
-from inatdatapipeline.inaturalist_auth import iNaturalistAuth
+from src.inatdatapipeline.taxa import TaxonMappingBuilder
+import src.inatdatapipeline.db_manager as db_manager
+from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
 
 config = "config.ini"
 
@@ -56,3 +56,7 @@ def test_build():
         auth,
         False
     )
+
+
+def test_get_tracking_df():
+    trackin

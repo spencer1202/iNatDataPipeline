@@ -10,13 +10,13 @@ from pathlib import Path
 from typing import Optional
 import pandas as pd
 
-import taxa
-import helpers
-import config
-from project_members import ProjectMembers
-from inaturalist_auth import iNaturalistAuth
-from db_manager import DBManager
-from observations import ObservationQuery
+import src.inatdatapipeline.taxa as taxa
+import src.inatdatapipeline.helpers as helpers
+import src.inatdatapipeline.config as config
+from src.inatdatapipeline.project_members import ProjectMembers
+from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
+from src.inatdatapipeline.db_manager import DBManager
+from src.inatdatapipeline.observations import ObservationQuery
 
 logger = logging.getLogger('pipeline')
 logger.setLevel(logging.DEBUG)

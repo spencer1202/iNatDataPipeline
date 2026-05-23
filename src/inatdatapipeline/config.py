@@ -1,6 +1,6 @@
 from pathlib import Path
 import click
-import helpers
+import src.inatdatapipeline.helpers as helpers
 import logging
 from typing import Annotated, Optional, TypeVar, Type, Tuple
 from pydantic import BeforeValidator, BaseModel, FilePath

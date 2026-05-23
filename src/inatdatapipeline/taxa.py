@@ -9,8 +9,8 @@ import numpy as np
 import re
 import time
 
-from inaturalist_auth import iNaturalistAuth
-from db_manager import DBManager
+from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
+from src.inatdatapipeline.db_manager import DBManager
 
 logger = logging.getLogger('pipeline')
 
@@ -157,22 +157,6 @@ class TaxonMappingBuilder:
         return df
 
 
-
-    @staticmethod
-    def rename_tracking_cols(df: pd.DataFrame) -> pd.DataFrame:
-        col_renames = {
-            "sname"                     : "sci_name", 
-            "ELCODE_BCD"                : "elcode", 
-            "name"                      : "est_id",
-            "scomname"                  : "common_name",
-            "s_rank"                    : "srank",
-            "eo_track_status_desc"      : "track_status"
-        }
-
-
-
-        return df.rename(columns=col_renames)
-
     @staticmethod
     def clean_taxon_id(id: str) -> int | None:
         """
@@ -237,50 +221,73 @@ class TaxonMappingBuilder:
 
         return pd.DataFrame(new_rows)
 
-    @staticmethod
-    def validate_tracking_list(df: pd.DataFrame):
-        """
-        Validates that all of the required columns are actually in the tracking list dataframe. 
-        Raises an AssertionError if a column is missing.
-        """
 
-        expected_cols = [
-            "sname",
-            "ELCODE_BCD",
-            "name",
-            "scomname",
-            "family",
-            "author",
-            "egt_uid",
-            "s_rank",
-            "eo_track_status_desc",
-            "explorer",
-            "growth_habit",
-            "element_type",
-            "duration"
-        ]
-        actual_cols = df.columns
-        for col in expected_cols:
-            assert col in actual_cols, f"{col}"
+    @staticmethod
+    def get_tracking_df(tracking_file: str, overrides_file: str) -> pd.DataFrame | None:
+        """
         
+        Returns:
+            Populated and cleaned tracking dataframe, or None on failure
+        """
+        try:
+            logger.debug("Loading tracking list and name overrides...")
+            overrides_df: pd.DataFrame = pd.read_csv(overrides_file, encoding="latin-1")
+            tracking_df = pd.DataFrame = pd.read_csv(tracking_file, encoding="latin-1")
+            logger.debug(f"* Loaded {len(tracking_df)} taxa from tracking list {tracking_file}.")
+            logger.debug(f"* Loaded {len(overrides_df)} name overrides from {overrides_file}.")
+        except:
+            logger.error(f"Encountered unknown error while loading overrides and/or tracking list.")
+            return None
+        
+        cols = {
+            "sname"                 : "sci_name",
+            "name"                  : "est_id",
+            "element_type"          : "element_type",
+            "scomname"              : "common_name",
+            "family"                : "family",
+            "author"                : "author",
+            "egt_uid"               : "egt_uid",
+            "s_rank"                : "srank",
+            "eo_track_status_desc"  : "track_status",
+            "explorer"              : "explorer", 
+            "ELCODE_BCD"            : "elcode",
+            "growth_habit"          : "growth_habit",
+            "duration"              : "duration"
+        }
+
+        # Validate expected columns
+        try:
+            actual_cols = tracking_df.columns
+            for col in cols.keys():
+                assert col in actual_cols, f"{col}"
+        except AssertionError as err:
+            logger.error(f"Tracking list is missing expected column: {err}")
+            return None
+        
+        # Rename columns
+        tracking_df = tracking_df.rename(columns=cols)
+        
+        # Add fields
+        tracking_df["explorer_link"] = tracking_df["explorer"].apply(
+            lambda x: f"<a href=\"{x}\">View in Explorer</a>"
+        )
+        tracking_df["scientific_name"] = tracking_df["sci_name"].apply(
+            lambda x: f"<i>{x}</i>"
+        )
+        tracking_df["element_name"] = tracking_df["est_id"].astype(str)
+
+        # Clean data types
+        
+
+        return tracking_df
+
+
+    
     
     def build_mapping(self, tracking_file: str, overrides_file: str, auth: iNaturalistAuth, force_rebuild: bool = False):
-        # Import overrides list
-        logger.debug("Loading tracking list and name overrides...")
-        try:
-            overrides_df: pd.DataFrame = pd.read_csv(overrides_file)
-        except FileNotFoundError as err:
-            logger.error(f"Could not find overrides file: {overrides_file}.")
-            return
-        logger.debug(f"* Loaded {len(overrides_df)} name overrides from {overrides_file}.")
 
         # Import and clean tracking list
-        try:
-            tracking_df: pd.DataFrame = pd.read_csv(tracking_file)
-        except FileNotFoundError as err:
-            logger.error(f"Could not find tracking file: {tracking_file}.")
-            return
-        logger.debug(f"* Loaded {len(tracking_df)} taxa from tracking list {tracking_file}.")
+        tracking_df: pd.DataFrame = TaxonMappingBuilder.get_tracking_df(tracking_file, overrides_file)
 
         # Validate that tracking list has correct columns
         try:

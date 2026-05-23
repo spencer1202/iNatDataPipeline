@@ -12,10 +12,10 @@ import time
 import click
 import numpy as np
 
-import config
-from project_members import ProjectMembers
-from db_manager import DBManager
-from inaturalist_auth import iNaturalistAuth
+import src.inatdatapipeline.config as config
+from src.inatdatapipeline.project_members import ProjectMembers
+from src.inatdatapipeline.db_manager import DBManager
+from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
 
 logger = logging.getLogger('pipeline')
 
