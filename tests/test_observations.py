@@ -14,7 +14,7 @@ from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
 # Configuration
 # ---------------------------------------------------------------------------
 
-db_file = "tests/test_small.db"
+db_file = "data/test_small.db"
 base_config = ConfigParser()
 base_config["observations"] = {
         "place_id": 10,

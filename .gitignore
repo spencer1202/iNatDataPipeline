@@ -7,8 +7,7 @@ logs
 
 ### Python ###
 .venv
-inatdatapipeline/__pycache__
-tests/__pycache__
+__pycache__
 
 ### Pytest ###
 .pytest_cache

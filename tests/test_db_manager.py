@@ -3,7 +3,7 @@ import pandas as pd
 
 from inatdatapipeline.db_manager import DBManager
 
-db_file = "tests/test.db"
+db_file = "data/test.db"
 experts_file = "data/experts/Master_iNaturalist_US_Canada_Experts_20240327.csv"
 
 def test_setup_db():

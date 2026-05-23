@@ -104,7 +104,7 @@ create_statements = {
         CREATE VIEW IF NOT EXISTS mapping (
             est_id, 
             elcode, 
-            scientific_name, 
+            sci_name, 
             common_name, 
             taxon_id, 
             inat_name, 
@@ -112,7 +112,7 @@ create_statements = {
         ) AS SELECT 
             tt.est_id, 
             tt.elcode, 
-            tt.scientific_name, 
+            tt.sci_name, 
             tt.common_name, 
             it.taxon_id, 
             it.inat_name, 
