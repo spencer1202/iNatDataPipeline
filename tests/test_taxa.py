@@ -1,19 +1,32 @@
-import pytest
-import configparser
-import time
-import os
 import pandas as pd
+import logging
 
-from inatdatapipeline.taxa import TaxonMappingBuilder
-import inatdatapipeline.db_manager as db_manager
-from inatdatapipeline.inaturalist_auth import iNaturalistAuth
+from src.inatdatapipeline.taxa import TaxonMappingBuilder
+from src.inatdatapipeline.db_manager import DBManager
+from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 config = "config.ini"
 
-tracking_file = "taxonomy/tracking_lists/elcode_tracking_k.csv"
-mapping_file = "tests/test_mappings.csv"
-overrides_file = "taxonomy/name_maps/name_overrides.csv"
+tracking_file = "data/taxonomy/elcode_tracking_a.csv"
+tracking_file_big = "data/taxonomy/all_tracked.csv"
+overrides_file = "data/taxonomy/name_overrides.csv"
+db_file = "data/test.db"
 
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+# Set up logging
+logger = logging.getLogger('pipeline')
+# logger.setLevel(logging.DEBUG)
+
+# console_handler = logging.StreamHandler()
+# console_handler.setLevel(logging.DEBUG)
+# console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+
+# logger.addHandler(console_handler)
 
 def test_preprocess():
     names = {
@@ -39,20 +52,44 @@ def test_preprocess():
         assert processed_name == expected
 
 
-def test_preprocess_long():
-    tracking_df = pd.read_csv("taxonomy/tracking_lists/all_tracked.csv", usecols=["SNAME"])
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
-    for name in tracking_df["SNAME"].to_list():
+def test_preprocess_long():
+    tracking_df = pd.read_csv(tracking_file_big, usecols=["sname"], encoding="latin-1")
+
+    for name in tracking_df["sname"].to_list():
         result = TaxonMappingBuilder.preprocess_name(name)
         assert TaxonMappingBuilder.preprocess_name(name)
 
 
 def test_build():
-    builder = TaxonMappingBuilder(db_manager.DBManager("inat.db"))
+    builder = TaxonMappingBuilder(DBManager(db_file))
     auth = iNaturalistAuth()
+    db = DBManager(db_file)
+    with db as conn:
+        mapping_df = db.get_mappings()
+    
+    if len(mapping_df) == 0:
+        mapping_df = None
+
     df = builder.build_mapping(
         tracking_file,
         overrides_file,
         auth,
-        False
+        mapping_df
     )
+
+
+def test_get_tracking_df():
+    db = DBManager(db_file)
+    builder = TaxonMappingBuilder(db)
+
+    df = builder.get_tracking_df(tracking_file, overrides_file)
+
+    print(f"\n\n")
+    print("-------------------------------------------")
+    print(f"Tracking list: \n\n{df}\n")
+    df.info()
+    print("-------------------------------------------")

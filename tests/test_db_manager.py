@@ -4,7 +4,7 @@ import pandas as pd
 from inatdatapipeline.db_manager import DBManager
 
 db_file = "tests/test.db"
-experts_file = "experts/Master_iNaturalist_US_Canada_Experts_20240327.csv"
+experts_file = "data/experts/Master_iNaturalist_US_Canada_Experts_20240327.csv"
 
 def test_setup_db():
     manager = DBManager(db_file)
@@ -74,4 +74,4 @@ def test_get_full_observations():
     print(f"Full Observations: \n\n{df.head(10)}")
     print("-------------------------------------------")
 
-    df.to_csv("output/full_observations.csv", index=False)
+    df.to_csv("data/output/full_observations.csv", index=False)
