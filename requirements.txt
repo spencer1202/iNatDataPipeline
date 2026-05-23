@@ -1,6 +1,0 @@
-pandas
-requests
-pyinaturalist
-dotenv
-pytest
-setuptools

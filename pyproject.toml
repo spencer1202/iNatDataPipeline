@@ -1,11 +1,35 @@
 [project]
-name = "iNaturalist_ORBIC_data_pipeline"
+name = "inatdatapipeline"
 version = "0.0.1"
 authors = [
     { name = "Spencer Henwood", email = "henwood@pdx.edu" }
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas",
+    "requests",
+    "pyinaturalist",
+    "dotenv",
+    "pytest",
+    "setuptools",
+    "prison",
+    "click"
+]
+
+[tool.setuptools.packages.find]
+include = ["inatdatapipeline"]  # ["*"] by default
+exclude = ["tests"]
+
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[pytest]
+filterwarnings = [
+    'ignore:This pattern is interpreted as a regular expression'
+]
 
 [tool.pytest.ini_options]
 pythonpath = [".", "pipeline"]
