@@ -52,7 +52,7 @@ class iNaturalistAuth:
             if username == user:
                 self.access_token = pyinaturalist.get_access_token()
                 return
-            if helpers.get_yn_input(f"Found iNaturalist credentials for {username}, not {user}. Would you like to proceed with these credentials instead? (Y/N): "):
+            if get_yn_input(f"Found iNaturalist credentials for {username}, not {user}. Would you like to proceed with these credentials instead? (Y/N): "):
                 self.access_token = pyinaturalist.get_access_token()
                 return
         else:
