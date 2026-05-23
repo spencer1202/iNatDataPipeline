@@ -11,14 +11,21 @@ create_statements = {
         """
         CREATE TABLE IF NOT EXISTS tracking_taxa (
             est_id                int     NOT NULL PRIMARY KEY,
-            elcode                text    NOT NULL,
             sci_name              text,
+            element_type          text,
+            scientific_name       text,
             common_name           text,
+            element_name          text,
             family                text,
             author                text,
             egt_uid               int     NOT NULL,
             srank                 text,
-            track_status          text
+            track_status          text,
+            explorer              text,
+            explorer_link         text,
+            elcode                text    NOT NULL,
+            growth_habit          text,
+            duration              text
         );
         """,
     "inat_taxa":        
@@ -271,27 +278,41 @@ class DBManager:
         statements = [
             """
             INSERT OR IGNORE INTO tracking_taxa (
+                sci_name,
                 est_id, 
-                elcode, 
+                element_type,
                 scientific_name, 
                 common_name,
+                element_name,
                 family,
                 author,
                 egt_uid,
                 srank,
-                track_status
+                track_status,
+                explorer,
+                explorer_link,
+                elcode, 
+                growth_habit,
+                duration
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(est_id) 
-            DO UPDATE SET 
-                elcode = excluded.elcode,
+            DO UPDATE SET
+                sci_name = excluded.sci_name, 
+                element_type = excluded.element_type,
                 scientific_name = excluded.scientific_name,
-                common_name = excluded.common_name
+                common_name = excluded.common_name,
+                element_name = excluded.element_name,
                 family = excluded.family,
                 author = excluded.author,
                 egt_uid = excluded.egt_uid,
                 srank = excluded.srank,
-                track_status = excluded.track_status;
+                track_status = excluded.track_status,
+                explorer = excluded.explorer,
+                explorer_link = excluded.explorer_link,
+                elcode = excluded.elcode,
+                growth_habit = excluded.growth_habit,
+                duration = excluded.duration
             """,
             """
             INSERT OR IGNORE INTO inat_taxa (taxon_id, inat_name)
@@ -305,10 +326,28 @@ class DBManager:
             VALUES (?, ?, ?);
             """
         ]
+        tracking_cols = [
+            "sci_name", 
+            "est_id", 
+            "element_type", 
+            "scientific_name", 
+            "common_name", 
+            "element_name",
+            "family",
+            "author",
+            "egt_uid",
+            "srank",
+            "track_status",
+            "explorer",
+            "explorer_link",
+            "elcode",
+            "growth_habit",
+            "duration"
+        ]
         with closing(self._conn.cursor()) as cursor:
             cursor.executemany(
                 statements[0],
-                list(mapping_df[["est_id", "elcode", "scientific_name", "common_name"]].itertuples(index=False))
+                list(mapping_df[tracking_cols].itertuples(index=False))
             )
             cursor.executemany(
                 statements[1],
@@ -348,7 +387,7 @@ class DBManager:
         Queries database for iNaturalist taxa
         """
         df = self._select_query("SELECT * FROM inat_taxa")
-        df["date_updated"] = pd.to_datetime(df["date_updated"])
+        df["date_updated"] = df["date_updated"]
         return df
 
     
@@ -530,39 +569,7 @@ class DBManager:
         
         with closing(self._conn.cursor()) as cursor:
             cursor.execute(statement, [dt.date.today()] + list(complete_taxa))
-    
 
-    @staticmethod
-    def match_wildcards(elcode, pattern_string):
-        """
-        Converts SQL wildcards (A%|I%) into a corresponding regex pattern and checks if the elcode matches.
-        """
-        try:
-            if not elcode or not pattern_string:
-                return 0
-            
-            elcode_str = str(elcode).strip()
-            pattern_str = str(pattern_string).strip()
-        
-            if not elcode_str or not pattern_str:
-                return 0
-
-            patterns = pattern_string.split('|')
-            regex_parts = []
-
-            for p in patterns:
-                safe_p = p.replace(r"%", ".*")
-                regex_parts.append(safe_p)
-
-            combined_regex = f"^({"|".join(regex_parts)})$"
-            return 1 if re.match(combined_regex, elcode) else 0
-
-        except:
-            print(f"\n ---  Crash detected ---")
-            print(f"Inputs causing crash: elcode={repr(elcode)}, pattern={repr(pattern_string)}")
-            print(f"--------------------------")
-            raise
-    
 
     def get_expert_identifications(self):
         """
@@ -612,3 +619,34 @@ class DBManager:
             count = cursor.rowcount
 
         return count
+
+    @staticmethod
+    def match_wildcards(elcode, pattern_string):
+        """
+        Converts SQL wildcards (A%|I%) into a corresponding regex pattern and checks if the elcode matches.
+        """
+        try:
+            if not elcode or not pattern_string:
+                return 0
+            
+            elcode_str = str(elcode).strip()
+            pattern_str = str(pattern_string).strip()
+        
+            if not elcode_str or not pattern_str:
+                return 0
+
+            patterns = pattern_string.split('|')
+            regex_parts = []
+
+            for p in patterns:
+                safe_p = p.replace(r"%", ".*")
+                regex_parts.append(safe_p)
+
+            combined_regex = f"^({"|".join(regex_parts)})$"
+            return 1 if re.match(combined_regex, elcode) else 0
+
+        except:
+            print(f"\n ---  Crash detected ---")
+            print(f"Inputs causing crash: elcode={repr(elcode)}, pattern={repr(pattern_string)}")
+            print(f"--------------------------")
+            raise

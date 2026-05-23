@@ -5,8 +5,28 @@ import pyinaturalist
 import getpass
 import os
 
-import src.inatdatapipeline.helpers as helpers
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def get_yn_input(msg: str) -> bool:
+    """
+    Asks the user a yes/no question, validates input, returns result
+    """
+    success = False
+    while not success:
+        print(msg)
+        to_continue = input(msg)
+        if to_continue.lower() == "yes" or to_continue.lower() == "y":
+            return True
+        elif to_continue.lower() == "no" or to_continue.lower() == "n":
+            return False
+        else:
+            print("Invalid input.")
 
+
+# ---------------------------------------------------------------------------
+# iNaturalist Authentication
+# ---------------------------------------------------------------------------
 class iNaturalistAuth:
     """
     Helper class that handles getting iNaturalist access tokens and request headers.

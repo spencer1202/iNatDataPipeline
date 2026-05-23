@@ -9,14 +9,14 @@ import click
 from pathlib import Path
 from typing import Optional
 import pandas as pd
+import os
 
-import src.inatdatapipeline.taxa as taxa
-import src.inatdatapipeline.helpers as helpers
-import src.inatdatapipeline.config as config
-from src.inatdatapipeline.project_members import ProjectMembers
-from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
-from src.inatdatapipeline.db_manager import DBManager
-from src.inatdatapipeline.observations import ObservationQuery
+import inatdatapipeline.taxa as taxa
+import inatdatapipeline.config as config
+from inatdatapipeline.project_members import ProjectMembers
+from inatdatapipeline.inaturalist_auth import iNaturalistAuth
+from inatdatapipeline.db_manager import DBManager
+from inatdatapipeline.observations import ObservationQuery
 
 logger = logging.getLogger('pipeline')
 logger.setLevel(logging.DEBUG)
@@ -26,29 +26,36 @@ logger.setLevel(logging.DEBUG)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def get_db(db_file: Path) -> DBManager:
+def get_db(db_file: Path) -> DBManager | None:
     """
     Set up a database manager object
     """
     try:
         return DBManager(db_file)
     except Exception as err:
-        helpers.error(logger, "Failed to connect to file database.")
+        logger.error("Failed to connect to file database.")
+        return None
 
 
-def get_auth(user_agent: str, username: str) -> iNaturalistAuth:
+def get_db_and_auth(db_file: Path, user_agent: str, username: str) -> tuple[Optional[pd.DataFrame],Optional[pd.DataFrame]]:
     """
-    Set up an iNaturalist authentication object
+    Set up database connection and iNaturalist authentication.
     """
     try:
         auth: iNaturalistAuth = iNaturalistAuth(user_agent)
         auth.generate_access_token(username)
-    except Exception as err:
-        helpers.error(logger, "Failed to generate access token.")
-    if not auth.get_access_token():
-        helpers.error(logger, "Could not obtain OAuth2 access token.")
 
-    return auth
+    except Exception as err:
+        logger.error("Failed to generate access token.")
+        return (None, None)
+    
+    if not auth.get_access_token():
+        logger.error("Could not obtain OAuth2 access token.")
+        return (None, None)
+
+    db = get_db(db_file)
+
+    return db, auth
 
 
 def parse_config(config_path: str) -> ConfigParser:
@@ -70,11 +77,46 @@ def parse_config(config_path: str) -> ConfigParser:
         raise click.ClickException(err)
 
 
-def _done():
+def _exit_success():
     logger.info("")
     logger.info("Done!")
     logger.info("---------------------------------------\n")
 
+
+def _exit_failure():
+    logger.info("")
+    logger.info("Exiting.")
+    logger.info("---------------------------------------\n")
+
+
+def error(logger: logging.Logger, msg: str):
+    """
+    Log error and raise click exception using message
+    """
+    logger.error(msg)
+    raise click.ClickException(msg)
+
+
+def logging_setup(
+        logger: logging.Logger, 
+        log_folder: str = "logs", 
+        log_file: str = "taxon_mapping.log",
+        console_level: int = logging.INFO, 
+        file_level: int = logging.DEBUG,
+):
+    # Make sure name maps folder exists
+    os.makedirs(log_folder, exist_ok=True)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)
+    console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+
+    file_handler = logging.FileHandler(os.path.join(log_folder, log_file))
+    file_handler.setLevel(file_level)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M"))
+
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
 
 # ---------------------------------------------------------------------------
 # Root group
@@ -103,7 +145,7 @@ def _done():
 )
 @click.pass_context
 def main(ctx: click.Context, username: str | None, db: str | None, config_path: str | None):
-    helpers.logging_setup(logger, "logs", "pipeline.log")
+    logging_setup(logger, "logs", "pipeline.log")
 
     # Read config file
     try:
@@ -163,22 +205,43 @@ def build_taxon_map(ctx: click.Context, tracking: str | None, rebuild: bool = Fa
     # Validate configs
     cfg_core, cfg_taxa = config.validate_command_config(ctx, "taxa", config.TaxaConfig)
 
-    db_manager = get_db(cfg_core.db_file)
-    auth = get_auth(cfg_core.user_agent, cfg_core.username)
+    # Get database and authentication
+    db_manager, auth = get_db_and_auth(cfg_core.db_file, cfg_core.user_agent, cfg_core.username)
+    if not db_manager or not auth:
+        _exit_failure()
+        return
+
     taxon_mapper = taxa.TaxonMappingBuilder(db_manager)
 
     # Make sure database is set up
     with db_manager as db:
-        db.setup_db()
+        db.setup_db()    
+
+    # Rebuild from scratch
+    if rebuild:
+        logger.info("Rebuilding taxon mappings from scratch...")
+        mapping_df = None
+    
+    # Get existing mappings
+    else:
+        logger.info("Loading existing mappings...")
+        try:
+            with db_manager as db:
+                mapping_df = db.get_mappings()
+        except Exception as err:
+            logger.error(f"Failed to load mappings: {err}")
+            _exit_failure()
+            return
+        logger.debug(f"* Retrieved {len(mapping_df)} taxon mappings from database.")
 
     taxon_mapper.build_mapping(
         cfg_taxa.tracking_list,
         cfg_taxa.name_overrides_file,
         auth,
-        rebuild
+        mapping_df
     )
 
-    _done()
+    _exit_success()
 
 
 # ---------------------------------------------------------------------------
@@ -205,9 +268,12 @@ def download_observations(ctx: click.Context, days_since_update: Optional[int] =
     # Validate config
     cfg_core, cfg_obs = config.validate_command_config(ctx, "observations", config.ObservationsConfig)
     
-    db_manager = get_db(cfg_core.db_file)
-    auth = get_auth(cfg_core.user_agent, cfg_core.username)
-    
+    # Get database and authentication
+    db_manager, auth = get_db_and_auth(cfg_core.db_file, cfg_core.user_agent, cfg_core.username)
+    if not db_manager or not auth:
+        _exit_failure()
+        return
+
     # Make sure database is set up
     with db_manager as db:
         db.setup_db()
@@ -215,7 +281,7 @@ def download_observations(ctx: click.Context, days_since_update: Optional[int] =
     observation_querier = ObservationQuery(db_manager, cfg_obs)
     observation_querier.get_observations(auth)
 
-    _done()
+    _exit_success()
 
 
 # ---------------------------------------------------------------------------
@@ -239,8 +305,11 @@ def review(ctx: click.Context, export_csv: str):
     # Validate config
     cfg_core, cfg_review = config.validate_command_config(ctx, "review", config.ReviewConfig)
 
-    db_manager = get_db(cfg_core.db_file)
-    auth = get_auth(cfg_core.user_agent, cfg_core.username)
+    # Get database and authentication
+    db_manager, auth = get_db_and_auth(cfg_core.db_file, cfg_core.user_agent, cfg_core.username)
+    if not db_manager or not auth:
+        _exit_failure()
+        return
 
     # Make sure database is set up
     with db_manager as db:
@@ -249,7 +318,7 @@ def review(ctx: click.Context, export_csv: str):
         observations_df = db.get_observations()
 
 
-    _done()
+    _exit_success()
 
 
 # ---------------------------------------------------------------------------
@@ -268,8 +337,10 @@ def project_members(ctx: click.Context):
     logger.info(f"Updating current members in project: {cfg_obs.project_id}")
 
     querier = ProjectMembers(cfg_obs.project_id, cfg_obs.per_page)
-    db_manager = get_db(cfg_core.db_file)
-    auth = get_auth(cfg_core.user_agent, cfg_core.username)
+    # Get database and authentication
+    db_manager, auth = get_db_and_auth(cfg_core.db_file, cfg_core.user_agent, cfg_core.username)
+    if not db_manager or not auth:
+        return
     
     # Make sure database is set up
     with db_manager as db:
@@ -277,7 +348,7 @@ def project_members(ctx: click.Context):
     
     querier.run(db_manager, auth)
 
-    _done()
+    _exit_success()
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +370,7 @@ def setup_database(ctx: click.Context):
     with db_manager as db:
         db.setup_db()
     
-    _done()
+    _exit_success()
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +402,9 @@ def update_experts(ctx: click.Context, expert_list: Optional[str]):
     with db_manager as db:
         count = db.update_experts(experts_df)
 
-    logger.info(f"Inserted {count} experts!")
+    logger.info(f"Inserted {count} experts.")
+
+    _exit_success()
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +467,7 @@ def biotics_query(ctx: click.Context):
         """
     print(query)
 
-    _done()
+    _exit_success()
 
 
 if __name__ == "__main__":

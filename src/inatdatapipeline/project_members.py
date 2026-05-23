@@ -4,8 +4,8 @@ import time
 import logging
 import click
 
-from db_manager import DBManager
-from inaturalist_auth import iNaturalistAuth
+from inatdatapipeline.db_manager import DBManager
+from inatdatapipeline.inaturalist_auth import iNaturalistAuth
 
 logger = logging.getLogger('pipeline')
 

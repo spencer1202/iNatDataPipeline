@@ -12,10 +12,10 @@ import time
 import click
 import numpy as np
 
-import src.inatdatapipeline.config as config
-from src.inatdatapipeline.project_members import ProjectMembers
-from src.inatdatapipeline.db_manager import DBManager
-from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
+import inatdatapipeline.config as config
+from inatdatapipeline.project_members import ProjectMembers
+from inatdatapipeline.db_manager import DBManager
+from inatdatapipeline.inaturalist_auth import iNaturalistAuth
 
 logger = logging.getLogger('pipeline')
 
@@ -65,7 +65,7 @@ class ObservationQuery:
         Returns:
             Dictionary that maps a date string to a set of taxon IDs.
         """
-        date_taxon_map = taxa_df.groupby("date_updated")["taxon_id"].apply(set).to_dict()
+        date_taxon_map: dict = taxa_df.groupby("date_updated")["taxon_id"].apply(set).to_dict()
         date_taxon_map["None"] = set(taxa_df[taxa_df["date_updated"].isna()]["taxon_id"])
         return date_taxon_map
             
@@ -266,7 +266,7 @@ class ObservationQuery:
         # Filter for taxa queried more than days_updated before now
         else:
             target_date = dt.date.today() - dt.timedelta(days=self.update_days)
-            date_mask = (taxa_df["date_updated"].isna()) | (taxa_df["date_updated"] <= pd.Timestamp(target_date))
+            date_mask = (taxa_df["date_updated"].isna()) | (pd.to_datetime(taxa_df["date_updated"]) <= pd.Timestamp(target_date))
             taxa_df = taxa_df[date_mask]
         
         if len(taxa_df) == 0:

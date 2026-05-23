@@ -9,11 +9,16 @@ import numpy as np
 import re
 import time
 
-from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
-from src.inatdatapipeline.db_manager import DBManager
+from inatdatapipeline.inaturalist_auth import iNaturalistAuth
+from inatdatapipeline.db_manager import DBManager
 
+# Set up logging
 logger = logging.getLogger('pipeline')
 
+
+# ---------------------------------------------------------------------------
+# Taxon Mapping Builder
+# ---------------------------------------------------------------------------
 class TaxonMappingBuilder:
     def __init__(self, db_manager: DBManager):
         self.db_manager = db_manager
@@ -81,24 +86,6 @@ class TaxonMappingBuilder:
             return int(result_id), result_name
 
         return (None, None)
-
-
-    @staticmethod
-    def insert_overrides(tracking_df: pd.DataFrame, overrides_df: pd.DataFrame):
-        """
-        Creates new column "sname_clean" in tracking_df and populates it with the name overrides present in overrides_df
-        Args:
-            tracking_df:
-                Dataframe of tracking list.
-            overrides_df:
-                Dataframe of name overrides.
-        Returns:
-            Updated version of tracking_df
-        """
-        tracking_df["sname_clean"] = None
-        tracking_df["sname_clean"] = tracking_df["est_id"].map(overrides_df.set_index("est_id")["inat_name"])
-
-        return tracking_df
     
     
     @staticmethod
@@ -133,27 +120,14 @@ class TaxonMappingBuilder:
         
         return processed_name.strip()
 
-    
-    @staticmethod
-    def preprocess(df: pd.DataFrame):
-        """
-        Fills the sname_clean column with preprocessed versions of each taxon name.
-        """
-        df["sname_clean"] = np.where(
-            df["sname_clean"].isna(),
-            df["sci_name"].apply(TaxonMappingBuilder.preprocess_name),
-            df["sname_clean"]
-        )
-        return df
-
 
     @staticmethod
     def get_undescribed_names(df: pd.DataFrame) -> pd.DataFrame:
         # Matches names with a number at the end, grabs all text before the number
         expr = r"^((?:[A-Za-z\-]+[\t ])+)\d+$"
-        generic_names = df["sname_clean"].str.extract(expr, expand=False).str.strip()
+        generic_names = df["sci_name_clean"].str.extract(expr, expand=False).str.strip()
         df["exact_match"] = generic_names.isna()
-        df.update({"sname_clean": generic_names})
+        df.update({"sci_name_clean": generic_names})
         return df
 
 
@@ -192,7 +166,7 @@ class TaxonMappingBuilder:
 
         #################### Querying ####################
         for _, row in df.iterrows():
-            sname = row["sname_clean"]
+            sname = row["sci_name_clean"]
             logger.info(f"{process_num:>4} / {process_total}\t{sname}")
 
             # Check if this is an undescribed taxon, and if so if it has already been mapped.
@@ -225,18 +199,17 @@ class TaxonMappingBuilder:
     @staticmethod
     def get_tracking_df(tracking_file: str, overrides_file: str) -> pd.DataFrame | None:
         """
-        
         Returns:
             Populated and cleaned tracking dataframe, or None on failure
         """
         try:
             logger.debug("Loading tracking list and name overrides...")
             overrides_df: pd.DataFrame = pd.read_csv(overrides_file, encoding="latin-1")
-            tracking_df = pd.DataFrame = pd.read_csv(tracking_file, encoding="latin-1")
+            tracking_df: pd.DataFrame = pd.read_csv(tracking_file, encoding="latin-1")
             logger.debug(f"* Loaded {len(tracking_df)} taxa from tracking list {tracking_file}.")
             logger.debug(f"* Loaded {len(overrides_df)} name overrides from {overrides_file}.")
-        except:
-            logger.error(f"Encountered unknown error while loading overrides and/or tracking list.")
+        except Exception as ex:
+            logger.error(f"Encountered error while loading overrides and/or tracking list: {ex}")
             return None
         
         cols = {
@@ -276,78 +249,55 @@ class TaxonMappingBuilder:
         )
         tracking_df["element_name"] = tracking_df["est_id"].astype(str)
 
-        # Clean data types
-        
-
-        return tracking_df
-
-
-    
-    
-    def build_mapping(self, tracking_file: str, overrides_file: str, auth: iNaturalistAuth, force_rebuild: bool = False):
-
-        # Import and clean tracking list
-        tracking_df: pd.DataFrame = TaxonMappingBuilder.get_tracking_df(tracking_file, overrides_file)
-
-        # Validate that tracking list has correct columns
-        try:
-            TaxonMappingBuilder.validate_tracking_list(tracking_df)
-        except AssertionError as err:
-            logger.error(f"Tracking list is missing required field: {err}")
-            return
-
-        tracking_df = TaxonMappingBuilder.rename_tracking_cols(tracking_df)
-
-        # Insert name overrides
+        # Insert overrides
         logger.debug("Inserting name overrides...")
-        tracking_df = TaxonMappingBuilder.insert_overrides(tracking_df, overrides_df)
-        overrides_count = len(tracking_df[tracking_df["sname_clean"].notna()])
+        tracking_df["sci_name_clean"] = None
+        tracking_df["sci_name_clean"] = tracking_df["est_id"].map(overrides_df.set_index("est_id")["inat_name"])
+        overrides_count = len(tracking_df[tracking_df["sci_name_clean"].notna()])
         logger.debug(f"* Updated {overrides_count} names.")
 
         # Preprocess names
         logger.debug("Preprocessing scientific names...")
-        tracking_df = TaxonMappingBuilder.preprocess(tracking_df)
+        tracking_df["sci_name_clean"] = np.where(
+            tracking_df["sci_name_clean"].isna(),
+            tracking_df["sci_name"].apply(TaxonMappingBuilder.preprocess_name),
+            tracking_df["sci_name_clean"]
+        )
 
-        # Make sure database is set up
-        with self.db_manager as db:
-            db.setup_db()
+        return tracking_df
     
+    
+    def build_mapping(self, tracking_file: str, overrides_file: str, auth: iNaturalistAuth, mapping_df: pd.DataFrame):
+
+        # Import and clean tracking list
+        tracking_df: pd.DataFrame = TaxonMappingBuilder.get_tracking_df(tracking_file, overrides_file)
+
         cols = [
-            "est_id", 
-            "elcode", 
             "sci_name", 
+            "est_id", 
+            "element_type",
+            "scientific_name",
             "common_name",
+            "element_name",
             "family",
             "author",
             "egt_uid",
             "srank",
             "track_status",
             "explorer",
+            "explorer_link",
+            "elcode", 
             "growth_habit",
-            "element_type",
             "duration",
             "taxon_id", 
             "inat_name",
         ]
 
         # Create mapping dataframe, either with prior entries or from scratch
-        if not force_rebuild:
-            logger.info("Loading existing mappings...")
-            try:
-                with self.db_manager as db:
-                    mapping_df = db.get_mappings()
-            except Exception as err:
-                logger.error(f"Failed to load mappings: {err}")
-                return
-            
-            logger.debug(f"* Retrieved {len(mapping_df)} taxon mappings from database.")
-
-        else:
-            logger.info("Rebuilding taxon mappings from scratch...")
+        if mapping_df is None:
             mapping_df = pd.DataFrame(columns=cols)
 
         logger.debug("Filtering for taxa that don't have mappings yet...")
-
         match_mask = tracking_df["est_id"].isin(mapping_df["est_id"])
         to_match = tracking_df[~match_mask]
 
