@@ -1,6 +1,5 @@
 """
 TODO insert description of iNatDataPipeline tool
-
 """
 
 import logging
