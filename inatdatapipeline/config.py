@@ -45,6 +45,9 @@ RequiredExistingCSV = Annotated[Path, BeforeValidator(
 RequiredNewFile = Annotated[Path, BeforeValidator(
     lambda v: check_path(v, required=True, check_exists=False)
 )]
+RequiredNewCSV = Annotated[Path, BeforeValidator(
+    lambda v: check_path(v, required=True, check_exists=False, extension=".csv")
+)]
 
 
 # Pydantic config schemas
@@ -67,8 +70,9 @@ class TaxaConfig(BaseModel):
     tracking_list       : RequiredExistingCSV
     name_overrides_file : RequiredExistingCSV
 
-class ExpertsConfig(BaseModel):
+class ReviewConfig(BaseModel):
     experts_file        : RequiredExistingCSV
+    export_csv          : RequiredNewCSV
 
 class OverridesConfig(BaseModel):
     invertebrates_csv       : OptionalExistingCSV = None
@@ -82,7 +86,7 @@ class Config(BaseModel):
     core            : CoreConfig
     observations    : ObservationsConfig
     taxa            : TaxaConfig
-    experts         : ExpertsConfig
+    experts         : ReviewConfig
     overrides       : OverridesConfig
 
 

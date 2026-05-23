@@ -17,15 +17,23 @@ def test_get_mappings():
     with manager as db:
         db.setup_db()
         df = db.get_mappings()
-    print(f"\n\nMappings: \n{df}")
+    
+    print(f"\n\n")
+    print("-------------------------------------------")
+    print(f"Mappings: \n\n{df}")
+    print("-------------------------------------------")
 
 
 def test_get_inat_taxa():
     manager = DBManager(db_file)
     with manager as db:
         df = db.get_inat_taxa()
-    print(f"\n\niNat Taxa: \n{df}")
+    
+    print(f"\n\n")
+    print("-------------------------------------------")
+    print(f"iNat Taxa: \n\n{df}\n")
     df.info()
+    print("-------------------------------------------")
 
 
 def test_expert_identifications():
@@ -35,10 +43,14 @@ def test_expert_identifications():
         experts_df = db._select_query("SELECT * FROM experts;")
         identifications_df = db._select_query("SELECT * FROM identifications")
 
-    expert_ids_df.info()
     if len(experts_df) > 0 and len(identifications_df) > 0:
         assert len(expert_ids_df) > 0
-    print(expert_ids_df.head(10))
+
+    print(f"\n\n")
+    print("-------------------------------------------")
+    print(f"Expert Identifications: \n\n{expert_ids_df.head(10)}\n")
+    expert_ids_df.info()
+    print("-------------------------------------------")
 
 
 def test_update_experts():
@@ -50,3 +62,16 @@ def test_update_experts():
         count = db.update_experts(experts_df)
     
     assert len(experts_df) == count
+
+
+def test_get_full_observations():
+    manager = DBManager(db_file)
+    with manager as db:
+        df = manager.get_full_observations()
+    
+    print(f"\n\n")
+    print("-------------------------------------------")
+    print(f"Full Observations: \n\n{df.head(10)}")
+    print("-------------------------------------------")
+
+    df.to_csv("output/full_observations.csv", index=False)

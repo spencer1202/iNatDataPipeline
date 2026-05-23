@@ -171,6 +171,16 @@ create_statements = {
             ON id.user_id = ex.user_id
         JOIN users AS us
             ON id.user_id = us.user_id;
+        """,
+    "full_observations":
+        """
+        CREATE VIEW IF NOT EXISTS full_observations
+        AS SELECT *
+        FROM observations obs
+        JOIN tracking_rel tr
+            ON obs.taxon_id = tr.taxon_id
+        JOIN tracking_taxa tt
+            ON tr.est_id = tt.est_id;
         """
 }
 
@@ -554,6 +564,31 @@ class DBManager:
             raise
     
 
+    def get_expert_identifications(self):
+        """
+        Get identifications made by experts whose expertise matches the taxon.
+        """
+        self.check_connection()
+        self._conn.create_function("REGEXP_MATCH", 2, DBManager.match_wildcards)
+        self._conn.execute(create_statements["expert_identifications"])
+
+        query = """
+        SELECT * FROM expert_identifications
+        WHERE REGEXP_MATCH(elcode, expertise) = 1;
+        """
+
+        return self._select_query(query)
+
+
+    def get_full_observations(self):
+        """
+        Get observations from database
+        """
+        query = "SELECT * FROM full_observations;"
+        self.check_connection()
+        return self._select_query(query)
+    
+
     def update_experts(self, df: pd.DataFrame):
         """
         Update the experts table using the given dataframe.
@@ -577,16 +612,3 @@ class DBManager:
             count = cursor.rowcount
 
         return count
-            
-
-    def get_expert_identifications(self):
-        self.check_connection()
-        self._conn.create_function("REGEXP_MATCH", 2, DBManager.match_wildcards)
-        self._conn.execute(create_statements["expert_identifications"])
-
-        query = """
-        SELECT * FROM expert_identifications
-        WHERE REGEXP_MATCH(elcode, expertise) = 1;
-        """
-
-        return self._select_query(query)

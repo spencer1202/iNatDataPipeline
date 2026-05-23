@@ -118,7 +118,7 @@ def main(ctx: click.Context, username: str | None, db: str | None, config_path: 
     raw_config.setdefault("core", {})
     raw_config.setdefault("observations", {})
     raw_config.setdefault("taxa", {})
-    raw_config.setdefault("experts", {})
+    raw_config.setdefault("review", {})
     raw_config.setdefault("overrides", {})
 
     if db is not None:
@@ -219,14 +219,36 @@ def download_observations(ctx: click.Context, days_since_update: Optional[int] =
 
 
 # ---------------------------------------------------------------------------
-# Export
+# Review
 # ---------------------------------------------------------------------------
 
-@main.command("export")
+@main.command("review")
+@click.option("--export-csv", "export_csv",
+    default=None,
+    help="File to export reviewed observations to (will be overwritten)"
+)
 @click.pass_context
-def export(ctx: click.Context):
+def review(ctx: click.Context, export_csv: str):
     """Export data from local database"""
     logger.info("Export - not implemented yet!")
+
+    # Inject config override
+    if export_csv is not None:
+        ctx.obj["review"]["export_csv"] = export_csv
+
+    # Validate config
+    cfg_core, cfg_review = config.validate_command_config(ctx, "review", config.ReviewConfig)
+
+    db_manager = get_db(cfg_core.db_file)
+    auth = get_auth(cfg_core.user_agent, cfg_core.username)
+
+    # Make sure database is set up
+    with db_manager as db:
+        db.setup_db()
+        expert_ids_df = db.get_expert_identifications()
+        observations_df = db.get_observations()
+
+
     _done()
 
 
@@ -297,12 +319,12 @@ def update_experts(ctx: click.Context, expert_list: Optional[str]):
     """
     # Inject config override
     if expert_list:
-        ctx.obj["experts"]["csv_file"] = expert_list
+        ctx.obj["review"]["csv_file"] = expert_list
 
     # Validate config
-    cfg_core, cfg_experts = config.validate_command_config(ctx, "experts", config.ExpertsConfig)
+    cfg_core, cfg_review = config.validate_command_config(ctx, "review", config.ReviewConfig)
 
-    experts_df = pd.read_csv(cfg_experts.experts_file)
+    experts_df = pd.read_csv(cfg_review.experts_file)
     experts_df = experts_df.dropna(subset=["iNaturalist_id"])
 
     db_manager = get_db(cfg_core.db_file)
