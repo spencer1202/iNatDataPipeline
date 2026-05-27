@@ -1,9 +1,9 @@
 import pandas as pd
 import logging
 
-from src.inatdatapipeline.taxa import TaxonMappingBuilder
-from src.inatdatapipeline.db_manager import DBManager
-from src.inatdatapipeline.inaturalist_auth import iNaturalistAuth
+from inatdatapipeline.taxa import TaxonMappingBuilder
+from inatdatapipeline.db_manager import DBManager
+from inatdatapipeline.request_helpers import INaturalistAuth
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -20,13 +20,6 @@ db_file = "data/test.db"
 # ---------------------------------------------------------------------------
 # Set up logging
 logger = logging.getLogger('pipeline')
-# logger.setLevel(logging.DEBUG)
-
-# console_handler = logging.StreamHandler()
-# console_handler.setLevel(logging.DEBUG)
-# console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
-
-# logger.addHandler(console_handler)
 
 def test_preprocess():
     names = {
@@ -66,7 +59,7 @@ def test_preprocess_long():
 
 def test_build():
     builder = TaxonMappingBuilder(DBManager(db_file))
-    auth = iNaturalistAuth()
+    auth = INaturalistAuth()
     db = DBManager(db_file)
     with db as conn:
         mapping_df = db.get_mappings()

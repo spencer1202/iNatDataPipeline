@@ -1,20 +1,36 @@
+"""
+This module handles building a mapping between the Biotics and iNaturalist taxon entries.
+"""
+
 #!/usr/bin/env python3
 import os
 import logging
 import requests
-from typing import Tuple, Optional
+from typing import Tuple, Optional, NamedTuple, Self
 import pandas as pd
 import datetime
 import numpy as np
 import re
 import time
+from dataclasses import dataclass, field
+from sqlite3 import DatabaseError
 
-from inatdatapipeline.inaturalist_auth import iNaturalistAuth
+from inatdatapipeline.request_helpers import INaturalistAuth
 from inatdatapipeline.db_manager import DBManager
 
 # Set up logging
 logger = logging.getLogger('pipeline')
 
+@dataclass
+class Taxon:
+    taxon_id: int
+    name: str
+
+
+@dataclass
+class TaxonResult:
+    primary: Optional[Taxon] = None
+    alternatives: list[Taxon] = field(default_factory=list)
 
 # ---------------------------------------------------------------------------
 # Taxon Mapping Builder
@@ -24,7 +40,7 @@ class TaxonMappingBuilder:
         self.db_manager = db_manager
     
     @staticmethod
-    def query_taxon(scientific_name: str, auth: iNaturalistAuth) -> Tuple[Optional[int], Optional[str]]:
+    def query_taxon(scientific_name: str, auth: INaturalistAuth) -> Optional[TaxonResult]:
         """
         Get taxon_id and matched name for a scientific name using iNaturalist API
         
@@ -55,37 +71,43 @@ class TaxonMappingBuilder:
 
             results = data.get("results", [])
             if not results:
-                return (None, None)
+                return None
         
         except requests.RequestException as e:
             logger.error(f"Error looking up '{scientific_name}': {e}")
-            return None, None
+            return None
 
         # Look for exact name match first
+        taxon = TaxonResult()
         for result in results:
             result_name = result.get("name", "")
             result_id = result.get("id")
+
+            # Convert result_id to an integer
+            try:
+                result_id_int = int(result_id)
+            except TypeError:
+                logger.error(f"Taxon ID '{result_id}' is not valid.")
+                continue
             
             # Handle NaN values and ensure we have valid data
-            if pd.isna(result_name) or pd.isna(result_id) or not result_name or not result_id:
+            if pd.isna(result_name) or pd.isna(result_id_int) or not result_name or not result_id_int:
                 continue
             if type(result_name) != str:
                 continue
 
-            if result_name.lower() == scientific_name.lower(): #exact match
-                return int(result_id), result_name
+            taxon.alternatives.append( Taxon(result_id_int, result_name) )
 
-        # If no exact match, take first valid result (most observations)
-        for result in results:
-            result_name = result.get("name", "")
-            result_id = result.get("id")
-            
-            # Handle NaN values and ensure we have valid data
-            if pd.isna(result_name) or pd.isna(result_id) or not result_name or not result_id:
-                continue
-            return int(result_id), result_name
+            if not taxon.primary and result_name.lower() == scientific_name.lower(): #exact match
+                taxon.alternatives.pop()
+                taxon.primary = Taxon(result_id_int, result_name)
 
-        return (None, None)
+        if not taxon.primary and len(taxon.alternatives) > 0:
+            taxon.primary = taxon.alternatives.pop(0)
+        
+        if taxon.primary:
+            return taxon
+        return None
     
     
     @staticmethod
@@ -154,46 +176,70 @@ class TaxonMappingBuilder:
 
 
     @staticmethod
-    def get_new_mappings(df: pd.DataFrame, auth: iNaturalistAuth) -> pd.DataFrame:
+    def get_new_mappings(df: pd.DataFrame, auth: INaturalistAuth) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Get taxon mappings by querying for the taxa in the provided dataframe.
+
+        Returns:
+            (mappings_df, alternatives_df):
+                A dataframe of mappings between Biotics taxa and iNaturalist taxa, and a dataframe
+                of alternative iNaturalist names.
+        """
          # Process unmatched rows
         process_total = len(df)
         process_num = 1
-        new_rows = []
-        undescribed_names: dict[tuple[int, str]] = {}
+        new_taxa = []
+        alternative_taxa = []
+        undescribed_names: dict[str, TaxonResult] = {}
         
         # Get timestamp
         today = datetime.date.today()
 
         #################### Querying ####################
         for _, row in df.iterrows():
+            taxon: TaxonResult = None
             sname = row["sci_name_clean"]
             logger.info(f"{process_num:>4} / {process_total}\t{sname}")
 
             # Check if this is an undescribed taxon, and if so if it has already been mapped.
             if row["exact_match"]:
-                taxon_id, matched_name = TaxonMappingBuilder.query_taxon(sname, auth)
+                taxon = TaxonMappingBuilder.query_taxon(sname, auth)
             else:
                 if not undescribed_names.get(sname):
-                    taxon_id, matched_name = TaxonMappingBuilder.query_taxon(sname, auth)
-                    undescribed_names[sname] = (taxon_id, matched_name)
+                    taxon = TaxonMappingBuilder.query_taxon(sname, auth)
+                    undescribed_names[sname] = taxon
                 else:
-                    taxon_id, matched_name = undescribed_names.get(sname)
-
-            clean_id = TaxonMappingBuilder.clean_taxon_id(taxon_id)
+                    taxon = undescribed_names.get(sname)
             
-            # Copy all existing fields from tracking_df
-            new_row = row.to_dict()
-            # Add / overwrite mapping fields
-            new_row["taxon_id"] = clean_id
-            new_row["inat_name"] = matched_name
-            new_row["last_updated"] = today
+            # No result found
+            if not taxon:
+                process_num += 1
+                continue
 
-            new_rows.append(new_row)
+            # Copy all existing fields from tracking_df
+            new_taxon = row.to_dict()
+            # Add / overwrite mapping fields
+            new_taxon["taxon_id"] = taxon.primary.taxon_id
+            new_taxon["inat_name"] = taxon.primary.name
+            new_taxon["last_updated"] = today
+            new_taxa.append(new_taxon)
+
+            for tx in taxon.alternatives:
+                new_alternative = {
+                    "taxon_id": taxon.primary.taxon_id,
+                    "alternative_taxon_id": tx.taxon_id,
+                    "alternative_inat_name": tx.name
+                }
+                alternative_taxa.append(new_alternative)
+            
             process_num += 1
             # Be kind to the API
             time.sleep(1)
 
-        return pd.DataFrame(new_rows)
+        return (
+            pd.DataFrame(new_taxa) if len(new_taxa) > 0 else None,
+            pd.DataFrame(alternative_taxa) if len(alternative_taxa) > 0 else None
+        )
 
 
     @staticmethod
@@ -267,7 +313,7 @@ class TaxonMappingBuilder:
         return tracking_df
     
     
-    def build_mapping(self, tracking_file: str, overrides_file: str, auth: iNaturalistAuth, mapping_df: pd.DataFrame):
+    def build_mapping(self, tracking_file: str, overrides_file: str, auth: INaturalistAuth, mapping_df: pd.DataFrame):
 
         # Import and clean tracking list
         tracking_df: pd.DataFrame = TaxonMappingBuilder.get_tracking_df(tracking_file, overrides_file)
@@ -312,13 +358,14 @@ class TaxonMappingBuilder:
         # Generate new mappings
         logger.info("")
         logger.info("Beginning taxon queries...")
-        new_mappings = TaxonMappingBuilder.get_new_mappings(to_match, auth)
+        new_mappings, alternative_names = TaxonMappingBuilder.get_new_mappings(to_match, auth)
 
         # Insert mappings into database
         try:
             with self.db_manager as db:
                 db.insert_mappings(new_mappings)
-        except Exception as err:
+                db.insert_alternatives(alternative_names)
+        except DatabaseError as err:
             logger.error(f"Failed to insert mappings into database: {err}")
         
   

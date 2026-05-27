@@ -2,20 +2,25 @@
 TODO insert description of iNatDataPipeline tool
 """
 
+import sys
 import logging
 from configparser import ConfigParser
 import click
 from pathlib import Path
-from typing import Optional
-import pandas as pd
+from typing import Optional, Any
 import os
+from requests import HTTPError
+import pandas as pd
+from sqlite3 import DatabaseError
+from pydantic import ValidationError
 
 import inatdatapipeline.taxa as taxa
 import inatdatapipeline.config as config
-from inatdatapipeline.project_members import ProjectMembers
-from inatdatapipeline.inaturalist_auth import iNaturalistAuth
+from inatdatapipeline.request_helpers import (
+    INaturalistAuth, FetchProjectMembers, FetchAnnotations
+)
 from inatdatapipeline.db_manager import DBManager
-from inatdatapipeline.observations import ObservationQuery
+from inatdatapipeline.observations import ObservationQuery, ObservationsResult
 
 logger = logging.getLogger('pipeline')
 logger.setLevel(logging.DEBUG)
@@ -24,76 +29,63 @@ logger.setLevel(logging.DEBUG)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def get_db(db_file: Path) -> DBManager | None:
+def get_db_and_auth(
+        db_file: Path, 
+        user_agent: str, 
+        username: str
+) -> tuple[Optional[DBManager], Optional[INaturalistAuth]]:
     """
-    Set up a database manager object
-    """
-    try:
-        return DBManager(db_file)
-    except Exception as err:
-        logger.error("Failed to connect to file database.")
-        return None
-
-
-def get_db_and_auth(db_file: Path, user_agent: str, username: str) -> tuple[Optional[pd.DataFrame],Optional[pd.DataFrame]]:
-    """
-    Set up database connection and iNaturalist authentication.
+    Set up database connection and iNaturalist authentication. Catches exceptions and exits
+    with error message if one occurs.
     """
     try:
-        auth: iNaturalistAuth = iNaturalistAuth(user_agent)
-        auth.generate_access_token(username)
-
-    except Exception as err:
-        logger.error("Failed to generate access token.")
-        return (None, None)
+        auth: INaturalistAuth = INaturalistAuth(user_agent)
+        success = auth.generate_access_token(username)
+    # No app credentials
+    except ValueError as ex:
+        _exit_failure(ex)
+    # Invalid credentials
+    except HTTPError as ex:
+        _exit_failure("Authentication failed: Invalid credentials.")
     
-    if not auth.get_access_token():
-        logger.error("Could not obtain OAuth2 access token.")
-        return (None, None)
+    if not success:
+        _exit_failure("Could not obtain OAuth2 access token.")
 
-    db = get_db(db_file)
+    db = DBManager(db_file)
 
     return db, auth
 
 
-def parse_config(config_path: str) -> ConfigParser:
+def db_setup(db_manager: DBManager):
     """
-    Parse config file and replace options with arguments where specified.
-
-    Args:
-        args: Namespace object from argparser
-    Returns:
-        ConfigParser object loaded with config options
+    Helper function that sets up database tables, catches exceptions and exits with an error 
+    message if one occurs.
     """
     try:
-        cf = ConfigParser()
-        cf.read(config_path)
-        return cf
-    
-    except Exception as err:
-        logger.error(f"Failed to load config file: {config_path}")
-        raise click.ClickException(err)
+        with db_manager as db:
+            db.setup_db()    
+    except DatabaseError as ex:
+        _exit_failure(ex)
 
 
 def _exit_success():
     logger.info("")
     logger.info("Done!")
     logger.info("---------------------------------------\n")
+    sys.exit(0)
 
 
-def _exit_failure():
+def _exit_failure(msg: Any = None):
+    """
+    Optionally log an error message, then exit the program with an error code.
+    """
+    if msg:
+        logger.error(str(msg))
+    
     logger.info("")
     logger.info("Exiting.")
     logger.info("---------------------------------------\n")
-
-
-def error(logger: logging.Logger, msg: str):
-    """
-    Log error and raise click exception using message
-    """
-    logger.error(msg)
-    raise click.ClickException(msg)
+    sys.exit(1)
 
 
 def logging_setup(
@@ -112,7 +104,9 @@ def logging_setup(
 
     file_handler = logging.FileHandler(os.path.join(log_folder, log_file))
     file_handler.setLevel(file_level)
-    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M"))
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M")
+    )
 
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
@@ -121,6 +115,7 @@ def logging_setup(
 # Root group
 # ---------------------------------------------------------------------------
 
+# pylint: disable=no-value-for-parameter
 @click.group(help="CLI tool to manage iNaturalist data import pipeline")
 @click.option(
     "--config", "config_path",
@@ -149,10 +144,10 @@ def main(ctx: click.Context, username: str | None, db: str | None, config_path: 
     # Read config file
     try:
         cf = ConfigParser()
-        cf.read(config_path)
-    except Exception as err:
-        print(f"Failed to load config file: {config_path}")
-        raise click.ClickException(err)
+        with open(config_path, "r") as fp:
+            cf.read_file(fp)
+    except FileNotFoundError:
+        _exit_failure(f"Could not find config file: {config_path}")
     
     # Set up click CLI context
     raw_config = {section: dict(cf[section]) for section in cf.sections()}
@@ -202,19 +197,16 @@ def build_taxon_map(ctx: click.Context, tracking: str | None, rebuild: bool = Fa
         ctx.obj["taxa"]["tracking_list"] = tracking
 
     # Validate configs
-    cfg_core, cfg_taxa = config.validate_command_config(ctx, "taxa", config.TaxaConfig)
+    try:
+        cfg_core, cfg_taxa = config.validate_command_config(ctx, "taxa", config.TaxaConfig)
+    except ValidationError as ex:
+        _exit_failure(ex)
 
     # Get database and authentication
     db_manager, auth = get_db_and_auth(cfg_core.db_file, cfg_core.user_agent, cfg_core.username)
-    if not db_manager or not auth:
-        _exit_failure()
-        return
-
+    db_setup(db_manager)
+    
     taxon_mapper = taxa.TaxonMappingBuilder(db_manager)
-
-    # Make sure database is set up
-    with db_manager as db:
-        db.setup_db()    
 
     # Rebuild from scratch
     if rebuild:
@@ -228,9 +220,8 @@ def build_taxon_map(ctx: click.Context, tracking: str | None, rebuild: bool = Fa
             with db_manager as db:
                 mapping_df = db.get_mappings()
         except Exception as err:
-            logger.error(f"Failed to load mappings: {err}")
-            _exit_failure()
-            return
+            _exit_failure(f"Failed to load mappings: {err}")
+
         logger.debug(f"* Retrieved {len(mapping_df)} taxon mappings from database.")
 
     taxon_mapper.build_mapping(
@@ -260,25 +251,58 @@ def download_observations(ctx: click.Context, days_since_update: Optional[int] =
     """
     logger.info("Downloading observations...")
     
-    #  Inject config override
+    # Inject config override
     if days_since_update is not None:
         ctx.obj["observations"]["update_after_days"] = days_since_update
     
     # Validate config
-    cfg_core, cfg_obs = config.validate_command_config(ctx, "observations", config.ObservationsConfig)
+    try:
+        cfg_core, cfg_obs = config.validate_command_config(
+            ctx, "observations", config.ObservationsConfig
+        )
+    except ValidationError as ex:
+        _exit_failure(ex)
     
     # Get database and authentication
     db_manager, auth = get_db_and_auth(cfg_core.db_file, cfg_core.user_agent, cfg_core.username)
-    if not db_manager or not auth:
-        _exit_failure()
-        return
+    db_setup(db_manager)
 
-    # Make sure database is set up
-    with db_manager as db:
-        db.setup_db()
+    # Get iNat taxa from database
+    try:
+        with db_manager as db:
+            taxa_df = db.get_inat_taxa()
+    except Exception as err:
+        _exit_failure(f"Failed to get iNaturalist taxa from database: {err}")
 
-    observation_querier = ObservationQuery(db_manager, cfg_obs)
-    observation_querier.get_observations(auth)
+    # Make sure taxa df isn't empty
+    if len(taxa_df) == 0:
+        _exit_failure("No taxa found in database to download!")
+    
+    # Download observations
+    observation_querier = ObservationQuery(cfg_obs)
+    try:
+        results = observation_querier.fetch_observations(auth, taxa_df)
+    except ValueError as ex:
+        _exit_failure(ex)
+    
+    logger.info("Finished downloading!")
+    logger.info("")
+
+    # Update database
+    try:
+        with db_manager as db:
+            user_count = db.insert_users(results.users)
+            obs_count = db.insert_observations(results.observations)
+            ident_count = db.insert_identifications(results.identifications)
+            db.update_checked_date(results.completed_taxa)
+    except DatabaseError as err:
+        _exit_failure(err)
+
+    # Report results
+    logger.info("Inserted new records into database:")
+    logger.info(f"Users:            {user_count}")
+    logger.info(f"Observations:     {obs_count}")
+    logger.info(f"Identifications:  {ident_count}")
 
     _exit_success()
 
@@ -294,28 +318,28 @@ def download_observations(ctx: click.Context, days_since_update: Optional[int] =
 )
 @click.pass_context
 def review(ctx: click.Context, export_csv: str):
-    """Export data from local database"""
-    logger.info("Export - not implemented yet!")
-
+    """Export data from database"""
     # Inject config override
     if export_csv is not None:
         ctx.obj["review"]["export_csv"] = export_csv
 
     # Validate config
-    cfg_core, cfg_review = config.validate_command_config(ctx, "review", config.ReviewConfig)
+    try:
+        cfg_core, cfg_review = config.validate_command_config(ctx, "review", config.ReviewConfig)
+    except ValidationError as ex:
+        _exit_failure(ex)
 
     # Get database and authentication
-    db_manager, auth = get_db_and_auth(cfg_core.db_file, cfg_core.user_agent, cfg_core.username)
-    if not db_manager or not auth:
-        _exit_failure()
-        return
+    db_manager = DBManager(cfg_core.db_file)
+    db_setup(db_manager)
 
-    # Make sure database is set up
     with db_manager as db:
-        db.setup_db()
         expert_ids_df = db.get_expert_identifications()
-        observations_df = db.get_observations()
+        observations_df = db.get_full_observations()
 
+    print(expert_ids_df.head(50))
+    print("\n")
+    print(observations_df.head(50))
 
     _exit_success()
 
@@ -331,22 +355,28 @@ def project_members(ctx: click.Context):
     Query for project members and update database table
     """
     # Validate config
-    cfg_core, cfg_obs = config.validate_command_config(ctx, "observations", config.ObservationsConfig)
+    try:
+        cfg_core, cfg_obs = config.validate_command_config(
+            ctx, "observations", config.ObservationsConfig
+        )
+    except ValidationError as ex:
+        _exit_failure(ex)
     
     logger.info(f"Updating current members in project: {cfg_obs.project_id}")
 
-    querier = ProjectMembers(cfg_obs.project_id, cfg_obs.per_page)
-    # Get database and authentication
     db_manager, auth = get_db_and_auth(cfg_core.db_file, cfg_core.user_agent, cfg_core.username)
-    if not db_manager or not auth:
-        return
-    
-    # Make sure database is set up
-    with db_manager as db:
-        db.setup_db()
-    
-    querier.run(db_manager, auth)
+    db_setup(db_manager)
 
+    member_ids = FetchProjectMembers(auth, cfg_obs.per_page, cfg_obs.project_id)
+    logger.debug(f"Found {len(member_ids)} project members.")
+
+    try:
+        with db_manager as db:
+            rows_inserted = db_manager.replace_project_members(member_ids)
+    except DatabaseError as ex:
+        _exit_failure(ex)
+
+    logger.info(f"Inserted {rows_inserted} new member IDs.")
     _exit_success()
 
 
@@ -363,11 +393,13 @@ def setup_database(ctx: click.Context):
     logger.info(f"Setting up database...")
 
     # Validate config
-    cfg, _ = config.validate_command_config(ctx)
-    
-    db_manager = get_db(cfg.db_file)
-    with db_manager as db:
-        db.setup_db()
+    try:
+        cfg, _ = config.validate_command_config(ctx)
+    except ValidationError as ex:
+        _exit_failure(ex)
+
+    db_manager = DBManager(cfg.db_file)
+    db_setup(db_manager)
     
     _exit_success()
 
@@ -392,12 +424,15 @@ def update_experts(ctx: click.Context, expert_list: Optional[str]):
         ctx.obj["review"]["csv_file"] = expert_list
 
     # Validate config
-    cfg_core, cfg_review = config.validate_command_config(ctx, "review", config.ReviewConfig)
+    try:
+        cfg_core, cfg_review = config.validate_command_config(ctx, "review", config.ReviewConfig)
+    except ValidationError as ex:
+        _exit_failure(ex)
 
     experts_df = pd.read_csv(cfg_review.experts_file)
     experts_df = experts_df.dropna(subset=["iNaturalist_id"])
 
-    db_manager = get_db(cfg_core.db_file)
+    db_manager = DBManager(cfg_core.db_file)
     with db_manager as db:
         count = db.update_experts(experts_df)
 
@@ -409,6 +444,7 @@ def update_experts(ctx: click.Context, expert_list: Optional[str]):
 # ---------------------------------------------------------------------------
 # Get Biotics tracking query
 # ---------------------------------------------------------------------------
+
 @main.command("biotics-query")
 @click.pass_context
 def biotics_query(ctx: click.Context):
@@ -469,6 +505,30 @@ def biotics_query(ctx: click.Context):
     _exit_success()
 
 
+# ---------------------------------------------------------------------------
+# Annotations
+# ---------------------------------------------------------------------------
+@main.command("annotations")
+@click.pass_context
+def annotations(ctx: click.Context):
+    """
+    Set up the local database with all of the iNaturalist annotation options.
+    """
+    # Validate core config
+    try:
+        cfg_core = config.validate_command_config(ctx)[0]
+    except ValidationError as ex:
+        _exit_failure(ex)
+    
+    # Get database and authentication
+    db_manager, auth = get_db_and_auth(cfg_core.db_file, cfg_core.user_agent, cfg_core.username)
+
+    annotations, values = FetchAnnotations(auth)
+    with db_manager as db:
+        db.update_annotations(annotations, values)
+    
+    _exit_success()
+
+
 if __name__ == "__main__":
     main()
-

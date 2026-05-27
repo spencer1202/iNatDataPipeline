@@ -1,5 +1,12 @@
 {
 	"id": true,
+	"annotations":
+		{
+			"controlled_attribute_id": true,
+			"controlled_value_id": true,
+			"user_id": true,
+			"vote_score": true
+		},
 	"community_taxon_id": true,
 	"context_geoprivacy": true,
 	"created_at": true,
