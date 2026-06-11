@@ -1,22 +1,29 @@
 import pytest
 import pandas as pd
+import sqlite3
 
-from inatdatapipeline.db_manager import DBManager
+from inatdatapipeline.db import DBManager
+from inatdatapipeline.schemas import validation
 
-db_file = "data/test.db"
-experts_file = "data/experts/Master_iNaturalist_US_Canada_Experts_20240327.csv"
 
-def test_setup_db():
-    manager = DBManager(db_file)
+# Test invalid database file location
+def test_invalid_db(core_cfg):
+    db_manager = DBManager("not_a_directory/invalid_database.db")
+    with pytest.raises(sqlite3.OperationalError, match="unable to open database file"):
+        db_manager.connect()
+
+
+def test_setup_db(core_cfg):
+    manager = DBManager(core_cfg.db_file)
     manager.connect()
     manager.setup_db()
 
 
-def test_get_mappings():
-    manager = DBManager(db_file)
+def test_get_mappings(core_cfg):
+    manager = DBManager(core_cfg.db_file)
     with manager as db:
         db.setup_db()
-        df = db.get_mappings()
+        df = db.select("mappings")
     
     print(f"\n\n")
     print("-------------------------------------------")
@@ -24,10 +31,10 @@ def test_get_mappings():
     print("-------------------------------------------")
 
 
-def test_get_inat_taxa():
-    manager = DBManager(db_file)
+def test_get_inat_taxa(core_cfg):
+    manager = DBManager(core_cfg.db_file)
     with manager as db:
-        df = db.get_inat_taxa()
+        df = db.select("inat_taxa")
     
     print(f"\n\n")
     print("-------------------------------------------")
@@ -36,15 +43,10 @@ def test_get_inat_taxa():
     print("-------------------------------------------")
 
 
-def test_expert_identifications():
-    manager = DBManager(db_file)
+def test_expert_identifications(core_cfg):
+    manager = DBManager(core_cfg.db_file)
     with manager as db:
         expert_ids_df = db.get_expert_identifications()
-        experts_df = db._select_query("SELECT * FROM experts;")
-        identifications_df = db._select_query("SELECT * FROM identifications")
-
-    if len(experts_df) > 0 and len(identifications_df) > 0:
-        assert len(expert_ids_df) > 0
 
     print(f"\n\n")
     print("-------------------------------------------")
@@ -53,21 +55,18 @@ def test_expert_identifications():
     print("-------------------------------------------")
 
 
-def test_update_experts():
-    manager = DBManager(db_file)
-    experts_df = pd.read_csv(experts_file)
-    experts_df = experts_df.dropna(subset=["iNaturalist_id"])
+def test_update_experts(db, experts_clean):
+    experts_df = validation.ExpertsSchema.from_raw(experts_clean)   
     
-    with manager as db:
-        count = db.update_experts(experts_df)
+    with db as conn:
+        count = conn.update_experts(experts_df)
     
     assert len(experts_df) == count
 
 
-def test_get_full_observations():
-    manager = DBManager(db_file)
-    with manager as db:
-        df = manager.get_full_observations()
+def test_get_full_observations(db):
+    with db as conn:
+        df = conn.get_full_observations()
     
     print(f"\n\n")
     print("-------------------------------------------")

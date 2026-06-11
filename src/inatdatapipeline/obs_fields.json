@@ -1,5 +1,6 @@
 {
 	"id": true,
+	"uuid": true,
 	"annotations":
 		{
 			"controlled_attribute_id": true,
@@ -7,6 +8,8 @@
 			"user_id": true,
 			"vote_score": true
 		},
+	"photos": true,
+	"sounds": true,
 	"community_taxon_id": true,
 	"context_geoprivacy": true,
 	"created_at": true,

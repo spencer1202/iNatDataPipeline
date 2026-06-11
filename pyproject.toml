@@ -14,7 +14,10 @@ dependencies = [
     "pytest",
     "setuptools",
     "prison",
-    "click"
+    "click",
+    "pydantic",
+    "pandera",
+    "tzdata"
 ]
 
 [tool.setuptools.packages.find]
